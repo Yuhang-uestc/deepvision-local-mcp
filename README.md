@@ -151,6 +151,7 @@ python tests\test_server.py
 ## 已知限制
 
 - **qwen3-vl:8b 定位能力弱**：能验证框、描述场景、读文字，但直接输出精确坐标不可靠——因此定位交给 YOLO/OpenCV。
+- **多图对比（file_paths）在 qwen3-vl:8b 下实测无效**：Ollama 只把第一张图传给模型，第二张会被忽略；需要对比时改为分别分析单张图，由主模型综合。
 - **OCR 有误读率**：系统 OCR 偶发识别错误，重要文字建议与视觉模型交叉核对；艺术字/手写效果差。
 - **OCR 坐标在 PowerShell 5.1 下为 0**：Windows 内置 OCR 的文本块位置读取受 WinRT 限制；安装 [PowerShell 7](https://github.com/PowerShell/PowerShell) 后服务会自动改用 pwsh，坐标即可正常返回。
 - **8B 模型速度**：每次识图约 20~60 秒，可换 4B 提速。
