@@ -1,4 +1,4 @@
-# 一键安装 vision-perceive skill 到 ~/.codex/skills
+﻿# 一键安装 vision-perceive skill 到 ~/.codex/skills
 # 用法：powershell -ExecutionPolicy Bypass -File install-skill.ps1
 $ErrorActionPreference = "Stop"
 

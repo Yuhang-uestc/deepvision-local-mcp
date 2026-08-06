@@ -1,4 +1,4 @@
-# 环境自检：确认 Python、Ollama、视觉模型、检测依赖、MCP 注册是否就绪。
+﻿# 环境自检：确认 Python、Ollama、视觉模型、检测依赖、MCP 注册是否就绪。
 # 用法：powershell -ExecutionPolicy Bypass -File check.ps1
 $ErrorActionPreference = "Continue"
 

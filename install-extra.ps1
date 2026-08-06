@@ -1,4 +1,4 @@
-# 安装可选依赖：PaddleOCR（增强文字识别）、CLIP（YOLOE 零样本检测需要）。
+﻿# 安装可选依赖：PaddleOCR（增强文字识别）、CLIP（YOLOE 零样本检测需要）。
 # 用法：powershell -ExecutionPolicy Bypass -File install-extra.ps1
 $ErrorActionPreference = "Continue"
 

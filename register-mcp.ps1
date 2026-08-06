@@ -1,4 +1,4 @@
-# 仅追加 local_vision MCP 注册，绝不改动配置文件中的任何现有行。
+﻿# 仅追加 local_vision MCP 注册，绝不改动配置文件中的任何现有行。
 # 用法：powershell -ExecutionPolicy Bypass -File register-mcp.ps1
 $ErrorActionPreference = "Stop"
 
