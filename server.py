@@ -44,6 +44,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+import zipfile
 
 SERVER_NAME = "local-vision"
 SERVER_VERSION = "2.1.0"
@@ -908,6 +909,11 @@ def call_ocr_extract(args: dict) -> dict:
         if engine == "paddle":
             return err_result(err)
         log(f"PaddleOCR 不可用（{err}），回退 Windows OCR")
+        fallback_note = f"\n\n[提示] PaddleOCR 不可用（{err}），已回退 Windows OCR。"
+        r = _call_windows_ocr(file_path, lang)
+        if not r.get("isError"):
+            r["content"][0]["text"] += fallback_note
+        return r
     return _call_windows_ocr(file_path, lang)
 
 
@@ -1192,30 +1198,73 @@ def _get_detection_model(model_name: str = None):
 
 
 def _ensure_mobileclip_ts() -> None:
-    """YOLOE 的文本编码器需要 mobileclip_blt.ts（TorchScript），首次使用自动从镜像下载。"""
+    """YOLOE 的文本编码器需要 mobileclip_blt.ts（TorchScript，约 530MB），首次使用自动下载并校验完整性。"""
     server_dir = os.path.dirname(os.path.abspath(__file__))
     dest = os.path.join(server_dir, MOBILECLIP_TS)
-    if os.path.isfile(dest):
+    if os.path.isfile(dest) and _zip_is_valid(dest):
         return
-    log(f"未找到 {MOBILECLIP_TS}，正在从镜像下载（约 90MB，仅首次需要）...")
-    try:
-        req = urllib.request.Request(MOBILECLIP_TS_MIRROR, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=900) as resp, open(dest, "wb") as f:
-            shutil.copyfileobj(resp, f)
-        if os.path.getsize(dest) < 100000:
-            os.unlink(dest)
-            raise RuntimeError("下载文件过小，可能失败")
-        log(f"{MOBILECLIP_TS} 下载完成")
-    except Exception as e:
+    if os.path.isfile(dest):
+        log(f"检测到 {MOBILECLIP_TS} 不完整，删除后重新下载")
         try:
             os.unlink(dest)
         except OSError:
             pass
-        raise RuntimeError(
-            f"自动下载 {MOBILECLIP_TS} 失败：{e}\n"
-            f"请手动下载后放到项目目录：{MOBILECLIP_TS_MIRROR}\n"
-            "或设置环境变量 MOBILECLIP_TS_URL 指定其他镜像地址。"
+    mirrors = [
+        MOBILECLIP_TS_MIRROR,
+        "https://ghfast.top/https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts",
+        "https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts",
+    ]
+    last_err = "未知错误"
+    for url in mirrors:
+        log(f"正在从 {url} 下载 {MOBILECLIP_TS}（约 530MB，仅首次需要）...")
+        try:
+            _download_large_file(url, dest)
+            if _zip_is_valid(dest):
+                log(f"{MOBILECLIP_TS} 下载并校验通过")
+                return
+            last_err = "下载完成但文件校验失败（可能被截断）"
+            try:
+                os.unlink(dest)
+            except OSError:
+                pass
+        except Exception as e:
+            last_err = str(e)
+            try:
+                os.unlink(dest)
+            except OSError:
+                pass
+    raise RuntimeError(
+        f"自动下载 {MOBILECLIP_TS} 失败：{last_err}\n"
+        "请手动下载后放到项目目录，例如：\n"
+        "  curl -L -C - -o mobileclip_blt.ts \"https://ghproxy.net/https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts\"\n"
+        "或设置环境变量 MOBILECLIP_TS_URL 指定其他镜像地址。"
+    )
+
+
+def _zip_is_valid(path: str) -> bool:
+    """TorchScript 权重是 zip 格式；用 zipfile 读中央目录验证是否完整。"""
+    try:
+        with zipfile.ZipFile(path):
+            pass
+        return True
+    except Exception:
+        return False
+
+
+def _download_large_file(url: str, dest: str) -> None:
+    """优先用 curl 断点续传（大文件更稳），否则退回 urllib 直下。"""
+    curl = shutil.which("curl")
+    if curl:
+        proc = subprocess.run(
+            [curl, "-L", "-C", "-", "-sS", "--retry", "2", "-o", dest, url],
+            timeout=1800,
         )
+        if proc.returncode != 0:
+            raise RuntimeError(f"curl 下载失败（退出码 {proc.returncode}）")
+        return
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=900) as resp, open(dest, "wb") as f:
+        shutil.copyfileobj(resp, f)
 
 
 def _resolve_classes(model, classes):
