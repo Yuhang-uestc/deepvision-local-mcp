@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vision Perceive 多轮识图"
+  short_description: "对图片执行多轮感知与交叉校验，从多个角度多次调用把图看透，得到更可靠的识图结果"
+  default_prompt: "Use vision-perceive to analyze this image with the multi-pass perception workflow."

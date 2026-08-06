@@ -1,0 +1,5 @@
+# 基础运行不需要任何第三方包（server.py 零依赖）。
+# 以下为可选功能依赖：
+Pillow>=9.2          # crop_image / draw_bounding_box / image_info / cv_locate
+numpy>=1.24          # cv_locate（ultralytics 也会自动带上）
+ultralytics>=8.3     # detect_objects / detect_by_text（自带 torch、opencv-python、numpy）
