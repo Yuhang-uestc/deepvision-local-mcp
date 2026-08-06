@@ -118,6 +118,15 @@ python -m pip install ultralytics
 python -m pip install git+https://github.com/ultralytics/CLIP.git
 ```
 
+GitHub 不通时用镜像（任选其一）：
+
+```powershell
+python -m pip install git+https://ghproxy.net/https://github.com/ultralytics/CLIP.git
+python -m pip install git+https://ghfast.top/https://github.com/ultralytics/CLIP.git
+```
+
+首次调用 YOLOE 还会联网下载 CLIP 权重（ViT-B/32，约 300MB）。
+
 可选依赖可一键安装：
 
 ```powershell

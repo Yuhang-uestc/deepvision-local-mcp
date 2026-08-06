@@ -734,7 +734,12 @@ def _get_paddle_ocr(lang):
         from paddleocr import PaddleOCR
 
         paddle_lang = "ch" if lang.lower().startswith("zh") else "en"
-        _PADDLE_OCR_CACHE[key] = PaddleOCR(use_angle_cls=True, lang=paddle_lang, show_log=False)
+        try:
+            # PaddleOCR 2.x：启用角度分类器并关闭日志
+            _PADDLE_OCR_CACHE[key] = PaddleOCR(use_angle_cls=True, lang=paddle_lang, show_log=False)
+        except (TypeError, ValueError):
+            # PaddleOCR 3.x：不再支持 use_angle_cls / show_log
+            _PADDLE_OCR_CACHE[key] = PaddleOCR(lang=paddle_lang)
     return _PADDLE_OCR_CACHE[key]
 
 
@@ -1429,7 +1434,8 @@ def call_detect_by_text(args: dict) -> dict:
         if "clip" in str(e).lower():
             return err_result(
                 "YOLOE 零样本检测需要 CLIP 文本编码依赖。请先安装：\n"
-                "python -m pip install git+https://github.com/ultralytics/CLIP.git"
+                "python -m pip install git+https://github.com/ultralytics/CLIP.git\n"
+                "（GitHub 不通时可尝试镜像：python -m pip install git+https://ghproxy.net/https://github.com/ultralytics/CLIP.git）"
             )
         return err_result(f"零样本检测依赖缺失：{e}")
     except Exception as e:
