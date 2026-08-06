@@ -110,6 +110,12 @@ python -m pip install ultralytics
 - `detect_objects` 默认 `yolov8n.pt`（首次自动下载约 6MB，可 `DETECTION_MODEL` 换 `yolov8s.pt` 等）
 - `detect_by_text` 默认 `yoloe-v8s-seg.pt`（首次自动下载约 30MB），也可换 `yolov8s-world.pt`
 
+`detect_by_text`（YOLOE）还需要 CLIP 文本编码依赖，否则会报 `No module named 'clip'`：
+
+```powershell
+python -m pip install git+https://github.com/ultralytics/CLIP.git
+```
+
 提前下载零样本模型（可选，避免第一次调用等下载）：
 
 ```powershell

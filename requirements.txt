@@ -3,3 +3,5 @@
 Pillow>=9.2          # crop_image / draw_bounding_box / image_info / cv_locate
 numpy>=1.24          # cv_locate（ultralytics 也会自动带上）
 ultralytics>=8.3     # detect_objects / detect_by_text（自带 torch、opencv-python、numpy）
+# detect_by_text（YOLOE）额外需要 CLIP 文本编码：
+#   python -m pip install git+https://github.com/ultralytics/CLIP.git

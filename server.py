@@ -1110,6 +1110,13 @@ def call_detect_by_text(args: dict) -> dict:
             except Exception as e:
                 msg += f"\n（保存标注图失败：{e}）"
         return ok_result(msg)
+    except ImportError as e:
+        if "clip" in str(e).lower():
+            return err_result(
+                "YOLOE 零样本检测需要 CLIP 文本编码依赖。请先安装：\n"
+                "python -m pip install git+https://github.com/ultralytics/CLIP.git"
+            )
+        return err_result(f"零样本检测依赖缺失：{e}")
     except Exception as e:
         return err_result(f"检测失败：{e}")
 
