@@ -110,6 +110,12 @@ python -m pip install ultralytics
 - `detect_objects` 默认 `yolov8n.pt`（首次自动下载约 6MB，可 `DETECTION_MODEL` 换 `yolov8s.pt` 等）
 - `detect_by_text` 默认 `yoloe-v8s-seg.pt`（首次自动下载约 30MB），也可换 `yolov8s-world.pt`
 
+提前下载零样本模型（可选，避免第一次调用等下载）：
+
+```powershell
+python -c "from ultralytics import YOLO; YOLO('yoloe-v8s-seg.pt')"
+```
+
 ## 测试
 
 ```powershell
@@ -140,6 +146,7 @@ python tests\test_server.py
 
 - **qwen3-vl:8b 定位能力弱**：能验证框、描述场景、读文字，但直接输出精确坐标不可靠——因此定位交给 YOLO/OpenCV。
 - **OCR 有误读率**：系统 OCR 偶发识别错误，重要文字建议与视觉模型交叉核对；艺术字/手写效果差。
+- **OCR 坐标在 PowerShell 5.1 下为 0**：Windows 内置 OCR 的文本块位置读取受 WinRT 限制；安装 [PowerShell 7](https://github.com/PowerShell/PowerShell) 后服务会自动改用 pwsh，坐标即可正常返回。
 - **8B 模型速度**：每次识图约 20~60 秒，可换 4B 提速。
 - **模板匹配对纯色模板失效**：请裁取含纹理/边缘的区域作为模板。
 
