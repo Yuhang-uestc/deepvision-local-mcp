@@ -56,6 +56,12 @@ MAX_IMAGE_BYTES = int(os.environ.get("LOCAL_VISION_MAX_MB", "20")) * 1024 * 1024
 DEFAULT_PROMPT = "请详细描述这张图片的内容，包括画面主体、布局和图中出现的所有文字。"
 QUICK_PROMPT = "请用简洁的中文概括这张图片的主要内容，包括类型、主体和要点，不超过100字。"
 
+MOBILECLIP_TS = "mobileclip_blt.ts"
+MOBILECLIP_TS_MIRROR = os.environ.get(
+    "MOBILECLIP_TS_URL",
+    "https://ghproxy.net/https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts",
+)
+
 TOOLS = [
     {
         "name": "analyze_image",
@@ -1185,6 +1191,33 @@ def _get_detection_model(model_name: str = None):
     return _DETECTION_MODEL_CACHE[name]
 
 
+def _ensure_mobileclip_ts() -> None:
+    """YOLOE 的文本编码器需要 mobileclip_blt.ts（TorchScript），首次使用自动从镜像下载。"""
+    server_dir = os.path.dirname(os.path.abspath(__file__))
+    dest = os.path.join(server_dir, MOBILECLIP_TS)
+    if os.path.isfile(dest):
+        return
+    log(f"未找到 {MOBILECLIP_TS}，正在从镜像下载（约 90MB，仅首次需要）...")
+    try:
+        req = urllib.request.Request(MOBILECLIP_TS_MIRROR, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=900) as resp, open(dest, "wb") as f:
+            shutil.copyfileobj(resp, f)
+        if os.path.getsize(dest) < 100000:
+            os.unlink(dest)
+            raise RuntimeError("下载文件过小，可能失败")
+        log(f"{MOBILECLIP_TS} 下载完成")
+    except Exception as e:
+        try:
+            os.unlink(dest)
+        except OSError:
+            pass
+        raise RuntimeError(
+            f"自动下载 {MOBILECLIP_TS} 失败：{e}\n"
+            f"请手动下载后放到项目目录：{MOBILECLIP_TS_MIRROR}\n"
+            "或设置环境变量 MOBILECLIP_TS_URL 指定其他镜像地址。"
+        )
+
+
 def _resolve_classes(model, classes):
     resolved = []
     names = {str(v).lower(): int(k) for k, v in (model.names or {}).items()}
@@ -1416,6 +1449,8 @@ def call_detect_by_text(args: dict) -> dict:
         return err_result(f"加载检测模型失败：{e}。首次使用需要联网下载权重（{model_name}）。")
 
     try:
+        if "yoloe" in stem:
+            _ensure_mobileclip_ts()
         with contextlib.redirect_stdout(sys.stderr):
             model.set_classes(texts)
             results = model.predict(file_path, conf=conf, verbose=False)
@@ -1526,6 +1561,11 @@ def main() -> None:
     try:
         sys.stdin.reconfigure(encoding="utf-8")
         sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+    # 统一工作目录到项目目录：YOLOE 的 mobileclip_blt.ts 与模型权重按相对路径查找
+    try:
+        os.chdir(os.path.dirname(os.path.abspath(__file__)))
     except Exception:
         pass
     log(f"启动 v{SERVER_VERSION}，视觉模型={VISION_MODEL}，Ollama={OLLAMA_HOST}")

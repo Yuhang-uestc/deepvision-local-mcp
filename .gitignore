@@ -5,6 +5,8 @@ __pycache__/
 
 # 模型权重：AGPL 许可，不随仓库分发（首次调用自动下载）
 *.pt
+mobileclip_blt.ts
+mobileclip_*.pt
 
 # 个人/测试图片（含真人照片，禁止入库）
 detected_*.png
