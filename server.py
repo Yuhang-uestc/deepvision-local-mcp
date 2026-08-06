@@ -42,6 +42,8 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -1197,18 +1199,25 @@ def _get_detection_model(model_name: str = None):
     return _DETECTION_MODEL_CACHE[name]
 
 
-def _ensure_mobileclip_ts() -> None:
-    """YOLOE 的文本编码器需要 mobileclip_blt.ts（TorchScript，约 530MB），首次使用自动下载并校验完整性。"""
+_MOBILECLIP_DL = {
+    "lock": threading.Lock(),
+    "dest": None,
+    "thread": None,
+    "started": 0.0,
+    "error": None,
+}
+
+
+def _mobileclip_ready():
+    """返回 (是否就绪, 目标路径)。就绪 = 文件存在且 zip 完整。"""
     server_dir = os.path.dirname(os.path.abspath(__file__))
     dest = os.path.join(server_dir, MOBILECLIP_TS)
     if os.path.isfile(dest) and _zip_is_valid(dest):
-        return
-    if os.path.isfile(dest):
-        log(f"检测到 {MOBILECLIP_TS} 不完整，删除后重新下载")
-        try:
-            os.unlink(dest)
-        except OSError:
-            pass
+        return True, dest
+    return False, dest
+
+
+def _background_mobileclip_download(dest: str) -> None:
     mirrors = [
         MOBILECLIP_TS_MIRROR,
         "https://ghfast.top/https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts",
@@ -1233,12 +1242,23 @@ def _ensure_mobileclip_ts() -> None:
                 os.unlink(dest)
             except OSError:
                 pass
-    raise RuntimeError(
-        f"自动下载 {MOBILECLIP_TS} 失败：{last_err}\n"
-        "请手动下载后放到项目目录，例如：\n"
-        "  curl -L -C - -o mobileclip_blt.ts \"https://ghproxy.net/https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts\"\n"
-        "或设置环境变量 MOBILECLIP_TS_URL 指定其他镜像地址。"
-    )
+    with _MOBILECLIP_DL["lock"]:
+        _MOBILECLIP_DL["error"] = last_err
+
+
+def _start_mobileclip_download(dest: str) -> bool:
+    """启动后台下载；已在下载时返回 False。"""
+    with _MOBILECLIP_DL["lock"]:
+        if _MOBILECLIP_DL["thread"] and _MOBILECLIP_DL["thread"].is_alive():
+            return False
+        _MOBILECLIP_DL["dest"] = dest
+        _MOBILECLIP_DL["started"] = time.time()
+        _MOBILECLIP_DL["error"] = None
+        _MOBILECLIP_DL["thread"] = threading.Thread(
+            target=_background_mobileclip_download, args=(dest,), daemon=True
+        )
+        _MOBILECLIP_DL["thread"].start()
+        return True
 
 
 def _zip_is_valid(path: str) -> bool:
@@ -1499,7 +1519,28 @@ def call_detect_by_text(args: dict) -> dict:
 
     try:
         if "yoloe" in stem:
-            _ensure_mobileclip_ts()
+            ready, dest = _mobileclip_ready()
+            if not ready:
+                started = _start_mobileclip_download(dest)
+                with _MOBILECLIP_DL["lock"]:
+                    dl_error = _MOBILECLIP_DL["error"]
+                size_now = os.path.getsize(dest) if os.path.isfile(dest) else 0
+                if dl_error:
+                    return err_result(
+                        f"mobileclip_blt.ts 下载失败：{dl_error}\n"
+                        "请手动下载后放到项目目录，例如：\n"
+                        "  curl.exe -L -C - -o mobileclip_blt.ts \"https://ghproxy.net/https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts\"\n"
+                        "或设置环境变量 MOBILECLIP_TS_URL 指定其他镜像地址。"
+                    )
+                if started:
+                    note = "已自动开始后台下载（约 530MB），本调用已退出，不阻塞。"
+                else:
+                    note = "仍在后台下载中。"
+                return err_result(
+                    f"YOLOE 需要 {MOBILECLIP_TS}（约 530MB）。{note}\n"
+                    f"当前进度 {size_now / 1024 / 1024:.0f}MB。请稍等片刻后重试本调用，"
+                    "重试时会自动继续并显示最新进度。"
+                )
         with contextlib.redirect_stdout(sys.stderr):
             model.set_classes(texts)
             results = model.predict(file_path, conf=conf, verbose=False)

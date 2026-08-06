@@ -127,8 +127,9 @@ python -m pip install git+https://ghfast.top/https://github.com/ultralytics/CLIP
 
 首次调用 YOLOE 还会联网下载 CLIP 权重（ViT-B/32，约 300MB）。
 
-另外 YOLOE 的文本编码器需要 MobileCLIP 的 TorchScript 权重 `mobileclip_blt.ts`（约 90MB）。服务端会在首次调用
-`detect_by_text` 时自动从镜像下载到项目目录（默认 ghproxy 镜像，可用环境变量 `MOBILECLIP_TS_URL` 更换）。也可手动下载：
+另外 YOLOE 的文本编码器需要 MobileCLIP 的 TorchScript 权重 `mobileclip_blt.ts`（约 530MB）。服务端会在首次调用
+`detect_by_text` 时**后台**自动从镜像下载到项目目录（默认 ghproxy 镜像，可用环境变量 `MOBILECLIP_TS_URL` 更换）。
+下载不阻塞调用：工具会立即返回进度，稍后重试即可继续。也可手动下载：
 
 ```powershell
 curl -L -o mobileclip_blt.ts "https://ghproxy.net/https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts"
