@@ -5,3 +5,6 @@ numpy>=1.24          # cv_locate（ultralytics 也会自动带上）
 ultralytics>=8.3     # detect_objects / detect_by_text（自带 torch、opencv-python、numpy）
 # detect_by_text（YOLOE）额外需要 CLIP 文本编码：
 #   python -m pip install git+https://github.com/ultralytics/CLIP.git
+# ocr_extract 可选增强引擎 PaddleOCR（自动回退 Windows OCR）：
+#   python -m pip install paddlepaddle paddleocr
+# 以上可选依赖可一键安装：powershell -ExecutionPolicy Bypass -File install-extra.ps1

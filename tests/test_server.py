@@ -42,8 +42,15 @@ class MockHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/generate":
             n = int(self.headers.get("Content-Length", "0"))
-            if n:
-                self.rfile.read(n)
+            body = self.rfile.read(n) if n else b""
+            try:
+                payload = json.loads(body.decode("utf-8"))
+                model = payload.get("model", "")
+            except Exception:
+                model = ""
+            if model == "qwen3-vl:4b":
+                self._send({"error": "model not found"}, 404)
+                return
             self._send({"response": CANNED})
         else:
             self._send({"error": "not found"}, 404)
@@ -155,6 +162,7 @@ class TestLocalVision(unittest.TestCase):
             "image_info",
             "ocr_extract",
             "detect_objects",
+            "segment_objects",
             "detect_by_text",
             "cv_locate",
             "crop_image",
@@ -176,6 +184,12 @@ class TestLocalVision(unittest.TestCase):
             )
         )
         self.assertFalse(r["isError"])
+
+    def test_analyze_quick_fallback(self):
+        # quick 模式默认 qwen3-vl:4b，mock 返回 404，应自动回退 qwen3-vl:8b
+        r = self.result(self.client.call("analyze_image", {"file_path": self.test_img, "mode": "quick"}))
+        self.assertFalse(r["isError"], r)
+        self.assertIn("模拟视觉模型", r["content"][0]["text"])
 
     def test_image_info(self):
         r = self.result(self.client.call("image_info", {"file_path": self.test_img}))
@@ -259,6 +273,21 @@ class TestLocalVision(unittest.TestCase):
         )
         self.assertFalse(r["isError"], r)
         self.assertIn("90", r["content"][0]["text"])
+
+    def test_segment_missing_file_error(self):
+        r = self.result(self.client.call("segment_objects", {"file_path": "Z:/no/such.png"}))
+        self.assertTrue(r["isError"])
+
+    def test_ocr_paddle_not_installed(self):
+        try:
+            import paddleocr  # noqa: F401
+
+            self.skipTest("PaddleOCR 已安装，跳过未安装场景测试")
+        except ImportError:
+            pass
+        r = self.result(self.client.call("ocr_extract", {"file_path": self.test_img, "engine": "paddle"}))
+        self.assertTrue(r["isError"])
+        self.assertIn("PaddleOCR", r["content"][0]["text"])
 
     def test_missing_file_error(self):
         r = self.result(self.client.call("analyze_image", {"file_path": "Z:/no/such.png"}))

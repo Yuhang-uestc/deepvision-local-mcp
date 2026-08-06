@@ -38,3 +38,9 @@ if (Test-Path -LiteralPath $cfg) {
 Write-Host "`n===== 6) server.py 语法 ====="
 python -m py_compile "$PSScriptRoot\server.py" 2>$null
 if ($LASTEXITCODE -eq 0) { Write-Host "OK: server.py 语法正确" } else { Write-Host "FAIL: server.py 语法错误" }
+
+Write-Host "`n===== 7) 可选依赖 (PaddleOCR / CLIP) ====="
+python -c "import paddleocr; print('PaddleOCR OK:', paddleocr.__version__)" 2>$null
+if ($LASTEXITCODE -ne 0) { Write-Host "WARN: 未安装 PaddleOCR（可选，ocr_extract 会自动用 Windows OCR 兜底）" }
+python -c "import clip; print('CLIP OK')" 2>$null
+if ($LASTEXITCODE -ne 0) { Write-Host "WARN: 未安装 CLIP（可选，detect_by_text 零样本检测需要）" }

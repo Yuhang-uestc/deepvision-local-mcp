@@ -74,10 +74,11 @@ powershell -ExecutionPolicy Bypass -File install-skill.ps1
 
 | 工具 | 用途 |
 |---|---|
-| `analyze_image` | 本地视觉模型分析图片；`file_paths` 支持多图对比；`temperature` 可调 |
+| `analyze_image` | 本地视觉模型分析图片；`mode=quick` 快速精简输出（默认 4B，自动回退）、`mode=detailed` 完整（默认 8B）；`file_paths` 多图对比；`num_ctx`/`temperature` 可调 |
 | `image_info` | 读取尺寸/格式/大小，确定坐标系 |
-| `ocr_extract` | 系统 OCR 逐字提取文字（含文本块位置） |
+| `ocr_extract` | 文字提取；`engine=auto` 优先 PaddleOCR，否则 Windows OCR（含位置） |
 | `detect_objects` | YOLO 检测 COCO 80 类，返回类别/置信度/坐标框；可 `save_path` 存标注图 |
+| `segment_objects` | YOLO 分割（默认 yolov8n-seg.pt）：像素级掩膜 + 面积统计，遮挡数人/遥感量算用 |
 | `detect_by_text` | YOLOE / YOLO-World 零样本检测：用文字描述找任意物体 |
 | `cv_locate` | 颜色定位（mode=color）或模板匹配（mode=template） |
 | `crop_image` | 裁切 + 放大局部区域，小字/小目标二次识别 |
@@ -89,6 +90,7 @@ powershell -ExecutionPolicy Bypass -File install-skill.ps1
 | 场景 | 工具 | 示例 |
 |---|---|---|
 | 数人、找常见物体 | `detect_objects` | `classes=["person"]` |
+| 遮挡严重数人、面积量算 | `segment_objects` | `classes=["person"]`（掩膜更准） |
 | 找任意物体 | `detect_by_text` | `text="消防栓, 蓝色帐篷"` |
 | 找图例色块 | `cv_locate` | `mode="color", color="#3b6ea5"` |
 | 找图标/logo | `cv_locate` | `mode="template", template_path=图标.png` |
@@ -115,6 +117,19 @@ python -m pip install ultralytics
 ```powershell
 python -m pip install git+https://github.com/ultralytics/CLIP.git
 ```
+
+可选依赖可一键安装：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install-extra.ps1
+```
+
+## 提速说明（顺手带图别再等几分钟）
+
+- **快速模式**：`analyze_image(mode="quick")` 用 4B 模型（未安装自动回退 8B）、精简 prompt 控输出、上下文 4096，单次约 10~30 秒。skill 已规定：顺手附图只调一次 quick，不跑多轮。
+- **详细模式**：`analyze_image(mode="detailed")` 用 8B 完整描述，仅在用户要求仔细分析时使用。
+- **显存**：`num_ctx` 改小可省显存（8B 在 8GB 显存下会 20% 层跑 CPU，这是主要慢因）。
+- 想更快：`ollama pull qwen3-vl:4b` 后快速模式自动使用。
 
 提前下载零样本模型（可选，避免第一次调用等下载）：
 
@@ -143,14 +158,17 @@ python tests\test_server.py
 |---|---|---|
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama 服务地址 |
 | `OLLAMA_VISION_MODEL` | `qwen3-vl:8b` | 默认视觉模型 |
+| `VISION_MODEL_QUICK` | `qwen3-vl:4b` | 快速模式模型（未安装自动回退 8B） |
 | `LOCAL_VISION_MAX_MB` | `20` | 单张图片大小上限（MB） |
 | `DETECTION_MODEL` | `yolov8n.pt` | 默认 COCO 检测模型 |
+| `SEGMENTATION_MODEL` | `yolov8n-seg.pt` | 默认分割模型 |
 | `DETECTION_TEXT_MODEL` | `yoloe-v8s-seg.pt` | 默认零样本检测模型 |
 | `VISION_OUTPUT_DIR` | 项目 `outputs/` | 设置后强制所有生成文件写入该目录 |
 
 ## 已知限制
 
 - **qwen3-vl:8b 定位能力弱**：能验证框、描述场景、读文字，但直接输出精确坐标不可靠——因此定位交给 YOLO/OpenCV。
+- **qwen3-vl 设置 num_predict（max_tokens）会返回空输出**（实测 Ollama 行为），所以限长靠精简 prompt 而不是参数。
 - **多图对比（file_paths）在 qwen3-vl:8b 下实测无效**：Ollama 只把第一张图传给模型，第二张会被忽略；需要对比时改为分别分析单张图，由主模型综合。
 - **OCR 有误读率**：系统 OCR 偶发识别错误，重要文字建议与视觉模型交叉核对；艺术字/手写效果差。
 - **OCR 坐标在 PowerShell 5.1 下为 0**：Windows 内置 OCR 的文本块位置读取受 WinRT 限制；安装 [PowerShell 7](https://github.com/PowerShell/PowerShell) 后服务会自动改用 pwsh，坐标即可正常返回。

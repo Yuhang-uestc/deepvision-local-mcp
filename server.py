@@ -46,20 +46,23 @@ import urllib.error
 import urllib.request
 
 SERVER_NAME = "local-vision"
-SERVER_VERSION = "2.0.0"
+SERVER_VERSION = "2.1.0"
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
 VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "qwen3-vl:8b")
+VISION_MODEL_QUICK = os.environ.get("VISION_MODEL_QUICK", "qwen3-vl:4b")
 MAX_IMAGE_BYTES = int(os.environ.get("LOCAL_VISION_MAX_MB", "20")) * 1024 * 1024
 
 DEFAULT_PROMPT = "请详细描述这张图片的内容，包括画面主体、布局和图中出现的所有文字。"
+QUICK_PROMPT = "请用简洁的中文概括这张图片的主要内容，包括类型、主体和要点，不超过100字。"
 
 TOOLS = [
     {
         "name": "analyze_image",
         "description": (
             "用本地视觉模型（Ollama）分析一张或多张本地图片，返回文字描述，用于给纯文本主模型补看图能力。"
-            "传 file_path 单张图；需要对比（如原图 vs 放大图）时传 file_paths 数组。图片仅在本机处理。"
+            "mode=quick 走快速模型并限长输出（默认 qwen3-vl:4b，未安装自动回退 8b）；mode=detailed 走完整模型（默认 qwen3-vl:8b）。"
+            "顺手附图用 quick，认真分析图片用 detailed。传 file_path 单张图；需要对比时传 file_paths 数组。图片仅在本机处理。"
         ),
         "inputSchema": {
             "type": "object",
@@ -77,9 +80,21 @@ TOOLS = [
                     "type": "string",
                     "description": "可选。对图片的分析要求，默认是详细描述内容。",
                 },
+                "mode": {
+                    "type": "string",
+                    "description": "可选。quick（快速，默认模型 qwen3-vl:4b，限 200 token）或 detailed（完整，默认 qwen3-vl:8b），默认 detailed",
+                },
                 "model": {
                     "type": "string",
-                    "description": "可选。覆盖默认视觉模型，例如 qwen3-vl:4b。",
+                    "description": "可选。覆盖默认视觉模型，例如 qwen3-vl:4b；quick 模式下显式指定后不做自动回退。",
+                },
+                "max_tokens": {
+                    "type": "number",
+                    "description": "可选。限制输出 token 数（对应 Ollama num_predict），限长可显著提速。",
+                },
+                "num_ctx": {
+                    "type": "number",
+                    "description": "可选。上下文长度（对应 Ollama num_ctx），quick 默认 4096、detailed 默认 8192；改小可省显存。",
                 },
                 "temperature": {
                     "type": "number",
@@ -124,6 +139,46 @@ TOOLS = [
                 "language": {
                     "type": "string",
                     "description": "可选。OCR 语言，默认 zh-Hans-CN，可用 en-US",
+                },
+                "engine": {
+                    "type": "string",
+                    "description": "可选。auto（默认，装了 PaddleOCR 用 Paddle，否则用 Windows OCR）/ windows / paddle",
+                },
+            },
+            "required": ["file_path"],
+        },
+    },
+    {
+        "name": "segment_objects",
+        "description": (
+            "用 YOLO 分割模型（默认 yolov8n-seg.pt）做像素级实例分割：返回每个目标的类别、置信度、边界框、"
+            "掩膜面积（像素数和占图比例），并可保存标注叠加图和掩膜图。比 detect_objects 更适合遮挡严重的目标"
+            "（如密集合影数人）和面积量算（遥感地物轮廓）。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "本地图片的绝对路径"},
+                "min_confidence": {
+                    "type": "number",
+                    "description": "可选。置信度阈值，默认 0.35",
+                },
+                "classes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "可选。只保留指定类别，例如 [\"person\"]",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "可选。分割模型，默认 yolov8n-seg.pt",
+                },
+                "save_path": {
+                    "type": "string",
+                    "description": "可选。保存标注叠加图（框+掩膜），省略则自动生成",
+                },
+                "masks_path": {
+                    "type": "string",
+                    "description": "可选。保存纯掩膜图（黑底彩色轮廓），省略则不保存",
                 },
             },
             "required": ["file_path"],
@@ -562,8 +617,16 @@ def call_analyze_image(args: dict) -> dict:
         paths = [file_path] + [p for p in paths if p != file_path]
     if not paths:
         return err_result("缺少 file_path：请提供本地图片的绝对路径（或传 file_paths 数组做多图对比）")
-    prompt = str(args.get("prompt", "")).strip() or DEFAULT_PROMPT
-    model = str(args.get("model", "")).strip() or VISION_MODEL
+
+    mode = str(args.get("mode", "detailed")).strip().lower()
+    if mode not in ("quick", "detailed"):
+        return err_result("mode 只能是 quick 或 detailed")
+    explicit_model = bool(str(args.get("model", "")).strip())
+    prompt = str(args.get("prompt", "")).strip()
+    if not prompt:
+        prompt = QUICK_PROMPT if mode == "quick" else DEFAULT_PROMPT
+    model = str(args.get("model", "")).strip() or (VISION_MODEL_QUICK if mode == "quick" else VISION_MODEL)
+
     options = {}
     temperature = args.get("temperature")
     if temperature is not None:
@@ -571,11 +634,33 @@ def call_analyze_image(args: dict) -> dict:
             options["temperature"] = float(temperature)
         except (TypeError, ValueError):
             return err_result("temperature 必须是数字")
+    max_tokens = args.get("max_tokens")
+    if max_tokens is not None:
+        try:
+            options["num_predict"] = int(max_tokens)
+        except (TypeError, ValueError):
+            return err_result("max_tokens 必须是整数")
+    num_ctx = args.get("num_ctx")
+    if num_ctx is not None:
+        try:
+            options["num_ctx"] = int(num_ctx)
+        except (TypeError, ValueError):
+            return err_result("num_ctx 必须是整数")
+    # 注意：qwen3-vl 实测设置 num_predict 会返回空输出，因此快速模式不默认限长，
+    # 靠精简 prompt 控制输出长度；max_tokens 仅当用户显式传入时才生效。
+    options.setdefault("num_ctx", 4096 if mode == "quick" else 8192)
 
     try:
         images = [read_image_b64(p) for p in paths]
-        log(f"正在用 {model} 分析 {len(paths)} 张图 ...")
-        text = ollama_generate(model, prompt, images, options=options)
+        log(f"正在用 {model}（mode={mode}）分析 {len(paths)} 张图 ...")
+        try:
+            text = ollama_generate(model, prompt, images, options=options)
+        except urllib.error.HTTPError as e:
+            if e.code == 404 and mode == "quick" and not explicit_model and model != VISION_MODEL:
+                log(f"快速模型 {model} 不存在，自动回退到 {VISION_MODEL}")
+                text = ollama_generate(VISION_MODEL, prompt, images, options=options)
+            else:
+                raise
         return ok_result(text)
     except urllib.error.HTTPError as e:
         body = ""
@@ -584,7 +669,10 @@ def call_analyze_image(args: dict) -> dict:
         except Exception:
             pass
         if e.code == 404:
-            return err_result(f"Ollama 返回 404：模型 {model!r} 不存在。请先运行：ollama pull {model}")
+            return err_result(
+                f"Ollama 返回 404：模型 {model!r} 不存在。请先运行：ollama pull {model}"
+                + (f"（快速模式也可运行：ollama pull {VISION_MODEL_QUICK} 提速）" if model != VISION_MODEL_QUICK else "")
+            )
         return err_result(f"Ollama 请求失败（HTTP {e.code}）：{body or e}")
     except urllib.error.URLError as e:
         return err_result(f"无法连接 Ollama（{OLLAMA_HOST}）：{e.reason}。请确认 Ollama 已启动（ollama serve）。")
@@ -624,20 +712,118 @@ def call_list_models() -> dict:
         names = sorted(m.get("name", "") for m in data.get("models", []))
         if not names:
             return ok_result("本机 Ollama 还没有安装任何模型。先运行：ollama pull qwen3-vl:8b")
-        lines = [f"{name}  <-- 当前视觉模型" if name == VISION_MODEL else name for name in names]
+        lines = []
+        for name in names:
+            if name == VISION_MODEL:
+                lines.append(f"{name}  <-- detailed 模型")
+            elif name == VISION_MODEL_QUICK:
+                lines.append(f"{name}  <-- quick 模型")
+            else:
+                lines.append(name)
         return ok_result("本机 Ollama 模型：\n" + "\n".join(lines))
     except Exception as e:
         return err_result(f"获取模型列表失败：{e}")
 
 
-def call_ocr_extract(args: dict) -> dict:
-    file_path = str(args.get("file_path", "")).strip()
-    if not file_path:
-        return err_result("缺少 file_path 参数：请提供本地图片的绝对路径")
-    if not os.path.isfile(file_path):
-        return err_result(f"找不到图片文件：{file_path}")
-    lang = str(args.get("language", "")).strip() or "zh-Hans-CN"
+_PADDLE_OCR_CACHE = {}
 
+
+def _get_paddle_ocr(lang):
+    key = lang
+    if key not in _PADDLE_OCR_CACHE:
+        from paddleocr import PaddleOCR
+
+        paddle_lang = "ch" if lang.lower().startswith("zh") else "en"
+        _PADDLE_OCR_CACHE[key] = PaddleOCR(use_angle_cls=True, lang=paddle_lang, show_log=False)
+    return _PADDLE_OCR_CACHE[key]
+
+
+def _parse_paddle_v2(result):
+    lines = []
+    for page in result or []:
+        if not page:
+            continue
+        for item in page:
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                continue
+            box, txt_info = item[0], item[1]
+            if isinstance(txt_info, (list, tuple)) and txt_info:
+                text = str(txt_info[0])
+                confidence = txt_info[1] if len(txt_info) > 1 else None
+            else:
+                text = str(txt_info)
+                confidence = None
+            xs = [float(p[0]) for p in box]
+            ys = [float(p[1]) for p in box]
+            lines.append(
+                {
+                    "text": text,
+                    "x": round(min(xs)),
+                    "y": round(min(ys)),
+                    "w": round(max(xs) - min(xs)),
+                    "h": round(max(ys) - min(ys)),
+                    "confidence": confidence,
+                }
+            )
+    return lines
+
+
+def _parse_paddle_v3(result):
+    lines = []
+    for page in result or []:
+        if not isinstance(page, dict):
+            continue
+        texts = page.get("rec_texts") or []
+        polys = page.get("rec_polys") or page.get("dt_polys") or []
+        scores = page.get("rec_scores") or []
+        for i, poly in enumerate(polys):
+            if i >= len(texts):
+                break
+            xs = [float(p[0]) for p in poly]
+            ys = [float(p[1]) for p in poly]
+            lines.append(
+                {
+                    "text": str(texts[i]),
+                    "x": round(min(xs)),
+                    "y": round(min(ys)),
+                    "w": round(max(xs) - min(xs)),
+                    "h": round(max(ys) - min(ys)),
+                    "confidence": scores[i] if i < len(scores) else None,
+                }
+            )
+    return lines
+
+
+def _try_paddle_ocr(file_path, lang):
+    try:
+        ocr = _get_paddle_ocr(lang)
+    except ImportError:
+        return None, "未安装 PaddleOCR，请先运行：python -m pip install paddlepaddle paddleocr"
+    except Exception as e:
+        return None, f"PaddleOCR 初始化失败：{e}"
+    try:
+        result = ocr.ocr(str(file_path), cls=True)
+        lines = _parse_paddle_v2(result)
+    except Exception:
+        try:
+            result = ocr.predict(str(file_path))
+            lines = _parse_paddle_v3(result)
+        except Exception as e:
+            return None, f"PaddleOCR 识别失败：{e}"
+    return lines, None
+
+
+def _format_ocr_result(lines, engine_name):
+    if not lines:
+        return ok_result(f"{engine_name}：图中未识别到文字。")
+    text = "\n".join(l["text"] for l in lines)
+    blocks = "\n".join(
+        f"- [{l['x']},{l['y']},{l['w']}x{l['h']}] {l['text']}" for l in lines
+    )
+    return ok_result(f"OCR 识别文字（{engine_name}）：\n{text}\n\n文本块位置：\n{blocks}")
+
+
+def _call_windows_ocr(file_path, lang) -> dict:
     server_dir = os.path.dirname(os.path.abspath(__file__))
     script = os.path.join(server_dir, "win_ocr.ps1")
     cache_dir = os.path.join(server_dir, ".cache")
@@ -679,14 +865,39 @@ def call_ocr_extract(args: dict) -> dict:
         except OSError:
             pass
 
-    text = str(data.get("text", "")).strip()
-    lines = data.get("lines") or []
-    if not text:
-        return ok_result("图中未识别到文字。")
-    blocks = "\n".join(
-        f"- [{l.get('x')},{l.get('y')},{l.get('w')}x{l.get('h')}] {l.get('text')}" for l in lines
-    )
-    return ok_result(f"OCR 识别文字（{data.get('language', lang)}）：\n{text}\n\n文本块位置：\n{blocks}")
+    lines = []
+    for l in data.get("lines") or []:
+        lines.append(
+            {
+                "text": l.get("text", ""),
+                "x": l.get("x", 0),
+                "y": l.get("y", 0),
+                "w": l.get("w", 0),
+                "h": l.get("h", 0),
+            }
+        )
+    return _format_ocr_result(lines, f"Windows OCR（{data.get('language', lang)}）")
+
+
+def call_ocr_extract(args: dict) -> dict:
+    file_path = str(args.get("file_path", "")).strip()
+    if not file_path:
+        return err_result("缺少 file_path 参数：请提供本地图片的绝对路径")
+    if not os.path.isfile(file_path):
+        return err_result(f"找不到图片文件：{file_path}")
+    lang = str(args.get("language", "")).strip() or "zh-Hans-CN"
+    engine = str(args.get("engine", "auto")).strip().lower()
+    if engine not in ("auto", "windows", "paddle"):
+        return err_result("engine 只能是 auto / windows / paddle")
+
+    if engine in ("auto", "paddle"):
+        lines, err = _try_paddle_ocr(file_path, lang)
+        if err is None:
+            return _format_ocr_result(lines, "PaddleOCR")
+        if engine == "paddle":
+            return err_result(err)
+        log(f"PaddleOCR 不可用（{err}），回退 Windows OCR")
+    return _call_windows_ocr(file_path, lang)
 
 
 def call_crop_image(args: dict) -> dict:
@@ -1058,6 +1269,110 @@ def call_detect_objects(args: dict) -> dict:
         return err_result(f"检测失败：{e}")
 
 
+def _save_masks_image(results, save_path: str):
+    """把每个实例的掩膜多边形画到黑底图上，不同实例用不同颜色。"""
+    from PIL import Image, ImageDraw
+
+    r = results[0]
+    img_h, img_w = r.orig_shape
+    canvas = Image.new("RGB", (img_w, img_h), "black")
+    draw = ImageDraw.Draw(canvas)
+    palette = [
+        (255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0),
+        (255, 0, 255), (0, 255, 255), (255, 165, 0), (128, 0, 128),
+        (0, 128, 0), (128, 128, 0), (0, 128, 128), (128, 0, 0),
+    ]
+    for i, poly in enumerate(r.masks.xy):
+        pts = [(float(x), float(y)) for x, y in poly]
+        if len(pts) >= 3:
+            draw.polygon(pts, fill=palette[i % len(palette)])
+    canvas.save(save_path)
+
+
+def call_segment_objects(args: dict) -> dict:
+    file_path = str(args.get("file_path", "")).strip()
+    if not file_path:
+        return err_result("缺少 file_path 参数：请提供本地图片的绝对路径")
+    if not os.path.isfile(file_path):
+        return err_result(f"找不到图片文件：{file_path}")
+    try:
+        conf = float(args.get("min_confidence", 0.35))
+    except (TypeError, ValueError):
+        return err_result("min_confidence 必须是数字")
+    classes = args.get("classes")
+    if isinstance(classes, str):
+        classes = [c.strip() for c in classes.split(",") if c.strip()]
+    model_name = str(args.get("model", "")).strip() or os.environ.get("SEGMENTATION_MODEL", "yolov8n-seg.pt")
+    stem = os.path.splitext(os.path.basename(model_name))[0]
+    if "yoloe" in stem or "world" in stem:
+        return err_result("这是零样本模型，请使用 detect_by_text 工具")
+
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            model = _get_detection_model(model_name)
+    except ImportError:
+        return err_result("未安装目标检测依赖，请先运行：python -m pip install ultralytics")
+    except Exception as e:
+        return err_result(f"加载分割模型失败：{e}。首次使用需要联网下载权重（{model_name}）。")
+
+    try:
+        if classes:
+            try:
+                classes = _resolve_classes(model, classes)
+            except ValueError as e:
+                return err_result(str(e))
+        with contextlib.redirect_stdout(sys.stderr):
+            results = model.predict(file_path, conf=conf, classes=classes, verbose=False)
+        r = results[0]
+        img_h, img_w = r.orig_shape
+        if r.masks is None or len(r.masks) == 0:
+            if r.boxes is not None and len(r.boxes) > 0:
+                return err_result(
+                    f"模型 {model_name} 不是分割模型（只输出了边界框）。请使用带 -seg 的分割模型，如 yolov8n-seg.pt"
+                )
+            return ok_result(f"未分割到任何目标（置信度阈值 {conf}）。")
+        lines = []
+        count_by_class = {}
+        for i, box in enumerate(r.boxes):
+            x1, y1, x2, y2 = [round(float(v), 1) for v in box.xyxy[0].tolist()]
+            conf_v = round(float(box.conf[0]), 3)
+            cls_id = int(box.cls[0])
+            name = (r.names or {}).get(cls_id, str(cls_id))
+            count_by_class[name] = count_by_class.get(name, 0) + 1
+            mask_area = int(r.masks.data[i].sum().item())
+            area_pct = mask_area / (img_w * img_h) * 100
+            lines.append(
+                f"- {name} #{i + 1} ({conf_v})：像素框 [{x1},{y1},{x2},{y2}]，"
+                f"掩膜面积 {mask_area}px（占图 {area_pct:.2f}%）"
+            )
+        summary = "；".join(f"{k}×{v}" for k, v in count_by_class.items())
+        msg = (
+            f"分割到 {len(lines)} 个实例（图片 {img_w}x{img_h}，类别统计：{summary}）：\n"
+            + "\n".join(lines)
+        )
+        save_path = str(args.get("save_path", "")).strip()
+        if save_path:
+            try:
+                out = _safe_output_path(file_path, save_path)
+                with contextlib.redirect_stdout(sys.stderr):
+                    _save_plot(results, out)
+                msg += f"\n标注叠加图已保存：{out}"
+            except Exception as e:
+                msg += f"\n（保存标注图失败：{e}）"
+        masks_path = str(args.get("masks_path", "")).strip()
+        if masks_path:
+            try:
+                out = _safe_output_path(file_path, masks_path)
+                with contextlib.redirect_stdout(sys.stderr):
+                    _save_masks_image(results, out)
+                msg += f"\n纯掩膜图已保存：{out}"
+            except Exception as e:
+                msg += f"\n（保存掩膜图失败：{e}）"
+        return ok_result(msg)
+    except Exception as e:
+        return err_result(f"分割失败：{e}")
+
+
 def call_detect_by_text(args: dict) -> dict:
     file_path = str(args.get("file_path", "")).strip()
     if not file_path:
@@ -1156,6 +1471,8 @@ def handle_tools_call(msg: dict) -> dict:
         result["result"] = call_cv_locate(args)
     elif name == "detect_objects":
         result["result"] = call_detect_objects(args)
+    elif name == "segment_objects":
+        result["result"] = call_segment_objects(args)
     elif name == "detect_by_text":
         result["result"] = call_detect_by_text(args)
     else:
