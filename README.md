@@ -135,6 +135,9 @@ python -m pip install git+https://ghfast.top/https://github.com/ultralytics/CLIP
 curl -L -o mobileclip_blt.ts "https://ghproxy.net/https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts"
 ```
 
+**不想等 530MB 的话**：`detect_by_text` 可以立即改用 YOLO-World（约 25MB，文本编码内置，不需要 CLIP/mobileclip）。
+调用时传 `model="yolov8s-world.pt"` 即可，权重缺失时服务端会自动后台从镜像下载。
+
 可选依赖可一键安装：
 
 ```powershell

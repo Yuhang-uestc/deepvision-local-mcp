@@ -1199,38 +1199,48 @@ def _get_detection_model(model_name: str = None):
     return _DETECTION_MODEL_CACHE[name]
 
 
-_MOBILECLIP_DL = {
-    "lock": threading.Lock(),
-    "dest": None,
-    "thread": None,
-    "started": 0.0,
-    "error": None,
-}
+_MODEL_DOWNLOADS = {}
+_MODEL_DOWNLOADS_LOCK = threading.Lock()
 
 
-def _mobileclip_ready():
-    """返回 (是否就绪, 目标路径)。就绪 = 文件存在且 zip 完整。"""
-    server_dir = os.path.dirname(os.path.abspath(__file__))
-    dest = os.path.join(server_dir, MOBILECLIP_TS)
-    if os.path.isfile(dest) and _zip_is_valid(dest):
-        return True, dest
-    return False, dest
+def _model_file_path(name: str) -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
 
 
-def _background_mobileclip_download(dest: str) -> None:
-    mirrors = [
-        MOBILECLIP_TS_MIRROR,
-        "https://ghfast.top/https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts",
-        "https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts",
+def _model_file_ready(name: str) -> bool:
+    p = _model_file_path(name)
+    return os.path.isfile(p) and _zip_is_valid(p)
+
+
+def _asset_mirrors(name: str) -> list:
+    mirrors = []
+    if name == MOBILECLIP_TS:
+        mirrors.append(MOBILECLIP_TS_MIRROR)
+    base = "https://github.com/ultralytics/assets/releases/download/v8.4.0/"
+    mirrors += [
+        f"https://ghproxy.net/{base}{name}",
+        f"https://ghfast.top/{base}{name}",
+        f"{base}{name}",
     ]
+    seen = set()
+    out = []
+    for m in mirrors:
+        if m not in seen:
+            seen.add(m)
+            out.append(m)
+    return out
+
+
+def _run_model_download(state: dict, mirrors: list, dest: str) -> None:
     last_err = "未知错误"
     for url in mirrors:
-        log(f"正在从 {url} 下载 {MOBILECLIP_TS}（约 530MB，仅首次需要）...")
+        log(f"正在从 {url} 下载 {os.path.basename(dest)} ...")
         try:
             _download_large_file(url, dest)
             if _zip_is_valid(dest):
-                log(f"{MOBILECLIP_TS} 下载并校验通过")
-                return
+                log(f"{os.path.basename(dest)} 下载并校验通过")
+                last_err = None
+                break
             last_err = "下载完成但文件校验失败（可能被截断）"
             try:
                 os.unlink(dest)
@@ -1242,22 +1252,21 @@ def _background_mobileclip_download(dest: str) -> None:
                 os.unlink(dest)
             except OSError:
                 pass
-    with _MOBILECLIP_DL["lock"]:
-        _MOBILECLIP_DL["error"] = last_err
+    with _MODEL_DOWNLOADS_LOCK:
+        state["error"] = last_err
 
 
-def _start_mobileclip_download(dest: str) -> bool:
+def _start_model_download(name: str, mirrors: list, dest: str) -> bool:
     """启动后台下载；已在下载时返回 False。"""
-    with _MOBILECLIP_DL["lock"]:
-        if _MOBILECLIP_DL["thread"] and _MOBILECLIP_DL["thread"].is_alive():
+    with _MODEL_DOWNLOADS_LOCK:
+        state = _MODEL_DOWNLOADS.setdefault(name, {"thread": None, "error": None})
+        if state["thread"] and state["thread"].is_alive():
             return False
-        _MOBILECLIP_DL["dest"] = dest
-        _MOBILECLIP_DL["started"] = time.time()
-        _MOBILECLIP_DL["error"] = None
-        _MOBILECLIP_DL["thread"] = threading.Thread(
-            target=_background_mobileclip_download, args=(dest,), daemon=True
+        state["error"] = None
+        state["thread"] = threading.Thread(
+            target=_run_model_download, args=(state, mirrors, dest), daemon=True
         )
-        _MOBILECLIP_DL["thread"].start()
+        state["thread"].start()
         return True
 
 
@@ -1518,28 +1527,33 @@ def call_detect_by_text(args: dict) -> dict:
         return err_result(f"加载检测模型失败：{e}。首次使用需要联网下载权重（{model_name}）。")
 
     try:
-        if "yoloe" in stem:
-            ready, dest = _mobileclip_ready()
-            if not ready:
-                started = _start_mobileclip_download(dest)
-                with _MOBILECLIP_DL["lock"]:
-                    dl_error = _MOBILECLIP_DL["error"]
+        if "yoloe" in stem or "world" in stem:
+            fname = MOBILECLIP_TS if "yoloe" in stem else os.path.basename(model_name)
+            if not _model_file_ready(fname):
+                dest = _model_file_path(fname)
+                started = _start_model_download(fname, _asset_mirrors(fname), dest)
+                with _MODEL_DOWNLOADS_LOCK:
+                    dl_error = _MODEL_DOWNLOADS.get(fname, {}).get("error")
                 size_now = os.path.getsize(dest) if os.path.isfile(dest) else 0
+                approx = "约 530MB" if fname == MOBILECLIP_TS else "约 25MB"
                 if dl_error:
                     return err_result(
-                        f"mobileclip_blt.ts 下载失败：{dl_error}\n"
-                        "请手动下载后放到项目目录，例如：\n"
-                        "  curl.exe -L -C - -o mobileclip_blt.ts \"https://ghproxy.net/https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts\"\n"
-                        "或设置环境变量 MOBILECLIP_TS_URL 指定其他镜像地址。"
+                        f"{fname} 下载失败：{dl_error}\n"
+                        f"请手动下载后放到项目目录：\n  curl.exe -L -C - -o {fname} \"{_asset_mirrors(fname)[0]}\""
                     )
                 if started:
-                    note = "已自动开始后台下载（约 530MB），本调用已退出，不阻塞。"
+                    note = f"已自动开始后台下载（{approx}），本调用已退出，不阻塞。"
                 else:
                     note = "仍在后台下载中。"
+                hint = (
+                    "\n\n想立即用零样本检测，可改传 model=\"yolov8s-world.pt\"（约 25MB，无需 530MB 权重）。"
+                    if fname == MOBILECLIP_TS
+                    else ""
+                )
                 return err_result(
-                    f"YOLOE 需要 {MOBILECLIP_TS}（约 530MB）。{note}\n"
+                    f"detect_by_text 需要 {fname}（{approx}）。{note}\n"
                     f"当前进度 {size_now / 1024 / 1024:.0f}MB。请稍等片刻后重试本调用，"
-                    "重试时会自动继续并显示最新进度。"
+                    f"重试时会自动继续并显示最新进度。{hint}"
                 )
         with contextlib.redirect_stdout(sys.stderr):
             model.set_classes(texts)
