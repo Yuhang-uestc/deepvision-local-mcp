@@ -25,24 +25,12 @@ DeepSeek 等纯文本模型没有视觉能力，但通过 MCP 工具可以获得
 
 ## 原理
 
-```
-Codex / Claude Code / opencode（纯文本主模型）
-        │  MCP 标准协议（stdio）
-        ▼
-server.py（Python，基础零依赖）
-        │
-        ├─ analyze_image ──► 本地 Ollama（qwen3-vl:8b 等）
-        ├─ ocr_extract ────► PaddleOCR（回退 Windows OCR）
-        ├─ vision_status ──► 配置 / 依赖 / Ollama 健康检查
-        ├─ detect_objects ─► YOLO（COCO 80 类）
-        ├─ detect_by_text ─► YOLOE / YOLO-World（零样本）
-        ├─ cv_locate ──────► OpenCV 颜色/模板匹配
-        ├─ crop_image ─────► Pillow 裁切放大
-        └─ draw_bounding_box ► Pillow 画框
-        │
-        ▼
-返回给主模型（DeepSeek）继续推理，输出最终报告
-```
+![架构总览](examples/architecture.png)
+
+一句话：**主模型负责"想"，本地引擎负责"看"，MCP 是桥，skill 是流程**；图片全程只在本机处理。
+
+数据流：纯文本主模型（Codex / Claude Code / opencode / DeepSeek 等）→ `server.py`（MCP stdio，11 个工具）→
+本地引擎（Ollama 视觉模型 / PaddleOCR / YOLO / OpenCV / Pillow）→ 返回文字与坐标 → 主模型交叉校验并输出最终报告。
 
 ## 文件
 
