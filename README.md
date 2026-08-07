@@ -1,7 +1,7 @@
 # Local Vision MCP（本地识图）
 
 给纯文本主模型（DeepSeek 等）补上本地"看图"能力的 MCP server + 多轮识图闭环 skill。
-**图片只在本机处理**：读取本地图片 → 本地 Ollama 视觉模型 / YOLO / OpenCV / 系统 OCR → 返回文字与坐标，全程不出机器。
+**图片只在本机处理**：读取本地图片 → 本地 Ollama 视觉模型 / YOLO / PaddleOCR / OpenCV → 返回文字与坐标，全程不出机器。
 
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
@@ -11,7 +11,7 @@
 ## 特性
 
 - 🖼️ **本地看图**：图片不出机器，隐私安全；DeepSeek 等纯文本模型也能"看图"
-- 🔧 **专业工具分工**：视觉模型描述、OCR 文字、YOLO 检测/分割、零样本检测、颜色/模板定位、裁切放大，各管一段
+- 🔧 **专业工具分工**：视觉模型描述、PaddleOCR 场景文字识别（含坐标框）、YOLO 检测/分割、零样本检测、颜色/模板定位、裁切放大，各管一段
 - 🔄 **多轮识图闭环**：概览 → 聚焦 → 文字 → 定位 → 放大 → 交叉校验 → 综合报告，过滤幻觉
 - ⚡ **快慢双模式**：顺手附图走 quick（默认 4B、秒级返回），认真分析走 detailed（8B）
 - 🛡️ **部署友好**：server 零依赖起步；PaddleOCR / YOLOE 等重型能力可选、自动降级；下载支持断点续传与完整性校验
@@ -31,7 +31,7 @@ Codex / Claude Code / opencode（纯文本主模型）
 server.py（Python，基础零依赖）
         │
         ├─ analyze_image ──► 本地 Ollama（qwen3-vl:8b 等）
-        ├─ ocr_extract ────► Windows 内置 OCR
+        ├─ ocr_extract ────► PaddleOCR（回退 Windows OCR）
         ├─ detect_objects ─► YOLO（COCO 80 类）
         ├─ detect_by_text ─► YOLOE / YOLO-World（零样本）
         ├─ cv_locate ──────► OpenCV 颜色/模板匹配
@@ -219,7 +219,7 @@ python tests\test_server.py
 - **qwen3-vl 设置 num_predict（max_tokens）会返回空输出**（实测 Ollama 行为），所以限长靠精简 prompt 而不是参数。
 - **多图对比（file_paths）在 qwen3-vl:8b 下实测无效**：Ollama 只把第一张图传给模型，第二张会被忽略；需要对比时改为分别分析单张图，由主模型综合。
 - **OCR 有误读率**：系统 OCR 偶发识别错误，重要文字建议与视觉模型交叉核对；艺术字/手写效果差。
-- **OCR 坐标在 PowerShell 5.1 下为 0**：Windows 内置 OCR 的文本块位置读取受 WinRT 限制；安装 [PowerShell 7](https://github.com/PowerShell/PowerShell) 后服务会自动改用 pwsh，坐标即可正常返回。
+- **OCR 坐标在 PowerShell 5.1 下为 0**：仅指 Windows 内置 OCR 兜底路径（WinRT 限制）；使用 PaddleOCR 引擎时坐标正常。安装 [PowerShell 7](https://github.com/PowerShell/PowerShell) 后兜底路径的坐标也可用。
 - **8B 模型速度**：每次识图约 20~60 秒，可换 4B 提速。
 - **模板匹配对纯色模板失效**：请裁取含纹理/边缘的区域作为模板。
 
