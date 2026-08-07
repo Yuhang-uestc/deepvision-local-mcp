@@ -427,5 +427,56 @@ class TestLocalVision(unittest.TestCase):
             c.close()
 
 
+class TestZeroShotCnHelpers(unittest.TestCase):
+    """直接单测 server 内部函数：names 为 list 的兼容 + 中文零样本词典直译。"""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, ROOT)
+        import server
+
+        cls.server = server
+
+    def test_format_detection_names_list(self):
+        # YOLO-World set_classes 后 names 可能是 list，不应崩溃（回归测试）
+        s = self.server
+
+        class TensorLike:
+            def __init__(self, v):
+                self.v = v
+
+            def tolist(self):
+                return self.v
+
+        class Box:
+            def __init__(self):
+                self.xyxy = [TensorLike([1, 2, 3, 4])]
+                self.conf = [0.9]
+                self.cls = [0]
+
+        class Result:
+            orig_shape = (100, 200)
+            names = ["chair"]
+            boxes = [Box()]
+
+        r, msg = s._format_detection_results([Result()])
+        self.assertIn("chair", msg)
+        self.assertIn("检测到 1 个目标", msg)
+
+    def test_cn_dict_and_translate(self):
+        s = self.server
+        out, changed = s._cn_zs_translate_texts(
+            ["人", "dog", "蓝色帐篷"], translate_fn=lambda t: "blue tent"
+        )
+        self.assertEqual(out, ["person", "dog", "blue tent"])
+        self.assertTrue(changed)
+
+    def test_cn_dict_without_translate(self):
+        s = self.server
+        out, changed = s._cn_zs_translate_texts(["车", "dog"], translate_fn=None)
+        self.assertEqual(out, ["car", "dog"])
+        self.assertTrue(changed)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

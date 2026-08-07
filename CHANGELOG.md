@@ -11,6 +11,10 @@
 - 输入校验：主要看图工具拒绝相对路径，并按文件真实内容（magic-byte）校验格式，错误更明确
 - 可选大图缩放：`LOCAL_VISION_MAX_DIMENSION`（默认关闭），超长边大图发送前自动等比缩小，防 detailed 卡死
 - `OLLAMA_HOST` 归一化：允许写裸主机/端口（如 `0.0.0.0`、`127.0.0.1:11434`），自动补全 `http://` 与默认端口，修复 "unknown url type" 报错
+- 中文零样本自动本地翻译：`detect_by_text` 收到中文描述时，常见物体走词典直译、其余走本地 Ollama 翻译成英文再检测（`LOCAL_VISION_ZS_TRANSLATE=0` 关闭）
+
+### 修复
+- `_format_detection_results` 兼容 `names` 为 list 的情况（YOLO-World `set_classes` 后触发），修复 `'list' object has no attribute 'get'` 崩溃
 
 ### 文档
 - README 新增"健壮性与安全"章节、环境变量表补 5 个新变量
@@ -20,7 +24,7 @@
 - 隐私表述修正：明确"图片文件与视觉识别在本机完成、原图不直接上传；识别文字随对话交给主模型（云端主模型可见）"，不再笼统宣称"全程不出机器/绝对隐私"
 
 ### 测试
-- 离线测试新增：缓存命中、瞬时错误重试、不可信前缀、vision_status、相对路径拒绝、伪格式拒绝、可选缩放
+- 离线测试新增：缓存命中、瞬时错误重试、不可信前缀、vision_status、相对路径拒绝、伪格式拒绝、可选缩放、names-list 兼容、中文词典直译
 
 ## v2.1.1（2026-08-07）
 

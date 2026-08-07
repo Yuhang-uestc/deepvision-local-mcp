@@ -42,6 +42,8 @@ Local Vision MCP Server v2
   LOCAL_VISION_RETRY_BASE 重试退避基数（秒），默认 2.0
   LOCAL_VISION_MAX_DIMENSION 可选。analyze_image 发送给 Ollama 前的最大边长(px)，默认 0=关闭；
                           开启后超限大图自动等比缩小，防 detailed 卡死（全局细节会略降，要精度请走局部裁切）
+  LOCAL_VISION_ZS_TRANSLATE 中文零样本自动翻译开关，默认 1（开启）：常见物体走词典直译，
+                          其余走本地 Ollama 翻译成英文再检测；设为 0 关闭
   DETECTION_MODEL       默认 COCO 检测模型，默认 yolov8n.pt
   DETECTION_TEXT_MODEL   默认零样本检测模型，默认 yoloe-v8s-seg.pt
   VISION_OUTPUT_DIR     可选。设置后所有生成文件只能写入该目录
@@ -94,6 +96,11 @@ LOCAL_VISION_CACHE_MAX = int(os.environ.get("LOCAL_VISION_CACHE_MAX", "64"))
 LOCAL_VISION_RETRIES = int(os.environ.get("LOCAL_VISION_RETRIES", "2"))
 LOCAL_VISION_RETRY_BASE = float(os.environ.get("LOCAL_VISION_RETRY_BASE", "2.0"))
 LOCAL_VISION_MAX_DIMENSION = int(os.environ.get("LOCAL_VISION_MAX_DIMENSION", "0"))
+LOCAL_VISION_ZS_TRANSLATE = os.environ.get("LOCAL_VISION_ZS_TRANSLATE", "1").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 DEFAULT_PROMPT = "请详细描述这张图片的内容，包括画面主体、布局和图中出现的所有文字。"
 QUICK_PROMPT = "请用简洁的中文概括这张图片的主要内容，包括类型、主体和要点，不超过100字。"
@@ -1611,12 +1618,97 @@ def _format_detection_results(results):
         x1, y1, x2, y2 = [round(float(v), 1) for v in box.xyxy[0].tolist()]
         conf_v = round(float(box.conf[0]), 3)
         cls_id = int(box.cls[0])
-        name = (r.names or {}).get(cls_id, str(cls_id))
+        names = r.names or {}
+        if isinstance(names, list):
+            name = names[cls_id] if 0 <= cls_id < len(names) else str(cls_id)
+        else:
+            name = names.get(cls_id, str(cls_id))
         lines.append(
             f"- {name} ({conf_v})：像素框 [{x1},{y1},{x2},{y2}]，"
             f"归一化 [{x1 / img_w:.3f},{y1 / img_h:.3f},{x2 / img_w:.3f},{y2 / img_h:.3f}]"
         )
     return r, f"检测到 {len(lines)} 个目标（图片 {img_w}x{img_h}）：\n" + "\n".join(lines)
+
+
+_CJK_RE = __import__("re").compile(r"[\u4e00-\u9fff]")
+
+_CN_ZS_DICT = {
+    "人": "person", "人们": "people", "行人": "person",
+    "车": "car", "汽车": "car", "轿车": "car",
+    "公交车": "bus", "巴士": "bus", "卡车": "truck", "货车": "truck",
+    "自行车": "bicycle", "摩托车": "motorcycle",
+    "飞机": "airplane", "船": "boat",
+    "狗": "dog", "猫": "cat", "鸟": "bird", "马": "horse",
+    "牛": "cow", "羊": "sheep", "熊": "bear", "斑马": "zebra", "长颈鹿": "giraffe",
+    "椅子": "chair", "凳子": "chair", "桌子": "table", "书桌": "table",
+    "瓶子": "bottle", "杯子": "cup",
+    "手机": "cell phone", "电脑": "laptop", "笔记本电脑": "laptop",
+    "背包": "backpack", "手提包": "handbag", "雨伞": "umbrella",
+    "帽子": "hat", "眼镜": "glasses", "鞋": "shoes", "鞋子": "shoes",
+    "球": "sports ball", "足球": "sports ball",
+    "花": "flower", "树": "tree", "植物": "potted plant",
+    "碗": "bowl", "叉子": "fork", "刀": "knife", "勺子": "spoon",
+}
+
+
+def _ollama_text(prompt: str, model: str, timeout: int = 60) -> str:
+    """纯文本调用 Ollama（不传图片），用于本地翻译等。"""
+    payload = {"model": model, "prompt": prompt, "stream": False}
+    req = urllib.request.Request(
+        OLLAMA_HOST + "/api/generate",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return (data.get("response") or "").strip()
+
+
+def _ollama_translate(text: str) -> str:
+    """用本地 Ollama 把中文物体描述翻译成英文（全本地）。"""
+    prompt = (
+        "You are translating object descriptions for an object detector. "
+        f"Translate the following to English. Output only the English phrase:\n{text}"
+    )
+    for model in (VISION_MODEL_QUICK, VISION_MODEL):
+        try:
+            en = _ollama_text(prompt, model, timeout=60)
+            if en:
+                return en
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                return ""
+        except Exception:
+            return ""
+    return ""
+
+
+def _cn_zs_translate_texts(texts, translate_fn=None):
+    """把含中文的零样本描述转成英文：词典直译优先，未命中走 translate_fn（如本地 Ollama 翻译）。
+
+    返回 (新列表, 是否有改动)。
+    """
+    out = []
+    changed = False
+    for t in texts:
+        if _CJK_RE.search(t):
+            hit = _CN_ZS_DICT.get(t.strip())
+            if hit:
+                out.append(hit)
+                changed = True
+            elif translate_fn is not None:
+                en = translate_fn(t)
+                if en:
+                    out.append(en)
+                    changed = True
+                else:
+                    out.append(t)
+            else:
+                out.append(t)
+        else:
+            out.append(t)
+    return out, changed
 
 
 def _save_plot(results, save_path: str):
@@ -1797,6 +1889,11 @@ def call_detect_by_text(args: dict) -> dict:
     texts = list(dict.fromkeys(texts))
     if not texts:
         return err_result("text 解析后为空")
+    zs_translated = False
+    if LOCAL_VISION_ZS_TRANSLATE:
+        texts, zs_translated = _cn_zs_translate_texts(texts, translate_fn=_ollama_translate)
+        if zs_translated:
+            log(f"中文零样本描述已自动翻译：{texts}")
     try:
         conf = float(args.get("min_confidence", 0.3))
     except (TypeError, ValueError):
@@ -1849,6 +1946,8 @@ def call_detect_by_text(args: dict) -> dict:
             model.set_classes(texts)
             results = model.predict(file_path, conf=conf, verbose=False)
         r, msg = _format_detection_results(results)
+        if zs_translated:
+            msg += "\n[提示] 中文描述已自动本地翻译为英文后检测（词典 + 本地 Ollama 翻译）。"
         save_path = str(args.get("save_path", "")).strip()
         if save_path:
             try:

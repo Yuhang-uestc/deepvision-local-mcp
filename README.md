@@ -126,6 +126,8 @@ powershell -ExecutionPolicy Bypass -File install-skill.ps1
 | 小字/小目标 | `crop_image` | `scale=3` 后重新 OCR/分析 |
 | 验证框准不准 | `draw_bounding_box` + `analyze_image` | 画框后让视觉模型确认 |
 
+中文描述会自动本地翻译成英文再检测（常见物体走词典直译，其余走本地 Ollama 翻译；`LOCAL_VISION_ZS_TRANSLATE=0` 可关闭）。
+
 ## 多轮识图闭环（vision-perceive skill）
 
 收到图片分析请求时，按 skill 流程执行而不是单次调用：
@@ -234,6 +236,7 @@ python tests\test_server.py
 | `LOCAL_VISION_RETRIES` | `2` | Ollama 瞬时故障（429/5xx/网络抖动）重试次数 |
 | `LOCAL_VISION_RETRY_BASE` | `2.0` | 重试退避基数（秒，第 n 次等待 `基数×2^(n-1)`） |
 | `LOCAL_VISION_MAX_DIMENSION` | `0`（关闭） | 可选。`analyze_image` 发送给 Ollama 前的最大边长（px），超限大图自动等比缩小，防 detailed 卡死；全局细节会略降，要精度请用 `crop_image` 局部裁切 |
+| `LOCAL_VISION_ZS_TRANSLATE` | `1` | `detect_by_text` 中文描述自动本地翻译开关（词典直译 + Ollama 兜底），`0` 关闭 |
 | `DETECTION_MODEL` | `yolov8n.pt` | 默认 COCO 检测模型 |
 | `SEGMENTATION_MODEL` | `yolov8n-seg.pt` | 默认分割模型 |
 | `DETECTION_TEXT_MODEL` | `yoloe-v8s-seg.pt` | 默认零样本检测模型 |
@@ -250,6 +253,7 @@ python tests\test_server.py
 
 - **qwen3-vl:8b 定位能力弱**：能验证框、描述场景、读文字，但直接输出精确坐标不可靠——因此定位交给 YOLO/OpenCV。
 - **识别文字随对话上云**：图片文件不出本机，但 OCR / 描述等识别文字会进入主模型对话；若主模型为云端 API（如 DeepSeek），这些文字会发送到其服务器。需要完全隔离时可搭配本地主模型（如 Ollama 中的 qwen3 / deepseek-r1）。
+- **零样本检测的中文描述依赖本地翻译**：常见物体走词典直译，其余靠本地 Ollama 翻译（约几秒）；Ollama 未运行时仅词典词可用，复杂描述建议直接用英文。
 - **qwen3-vl 设置 num_predict（max_tokens）会返回空输出**（实测 Ollama 行为），所以限长靠精简 prompt 而不是参数。
 - **多图对比（file_paths）在 qwen3-vl:8b 下实测无效**：Ollama 只把第一张图传给模型，第二张会被忽略；需要对比时改为分别分析单张图，由主模型综合。
 - **OCR 有误读率**：系统 OCR 偶发识别错误，重要文字建议与视觉模型交叉核对；艺术字/手写效果差。
