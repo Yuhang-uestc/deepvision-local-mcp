@@ -75,7 +75,7 @@ class Client:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--analyze", action="store_true", help="包含慢速视觉模型分析")
-    ap.add_argument("--image", default=os.path.join(ROOT, "test_image.png"), help="测试图片")
+    ap.add_argument("--image", default=os.path.join(ROOT, "examples", "demo_input.png"), help="测试图片")
     ap.add_argument("--people", default=os.path.join(ROOT, "detected_people.png"), help="人物照片（数人测试）")
     args = ap.parse_args()
 
@@ -91,7 +91,7 @@ def main():
         people = args.people
 
         c.tool("image_info", {"file_path": img})
-        c.tool("cv_locate", {"file_path": img, "mode": "color", "color": "#3b6ea5", "tolerance": 60})
+        c.tool("cv_locate", {"file_path": img, "mode": "color", "color": "#16a34a", "tolerance": 28})
         c.tool(
             "crop_image",
             {

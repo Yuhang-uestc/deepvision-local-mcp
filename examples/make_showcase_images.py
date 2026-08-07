@@ -7,6 +7,8 @@
 - demo_annotated 复用 server.py 的真实工具输出：cv_locate 颜色定位 + 文字识别。
 - 文字识别自动优先 PaddleOCR（本项目的旗舰 OCR），PaddleOCR 不可用时回退
   Windows OCR，并在图上如实标注所用引擎。
+- 示例图按 2 倍分辨率原生绘制再识别（Windows OCR 对高分辨率小字识别更准），
+  展示时缩回 1 倍，识别框坐标同步折算。
 - 本机装好 PaddleOCR 后重跑本脚本，即可生成 PaddleOCR 版演示图。
 """
 
@@ -65,16 +67,17 @@ def draw_arrow(draw, x1, y1, x2, y2, color, width=4):
 
 
 # ============ 0. 合成示例图（无任何真实数据） ============
-def make_demo_input():
-    W, H = 960, 600
+def make_demo_input(scale=2):
+    S = scale
+    W, H = 960 * S, 600 * S
     img = Image.new("RGB", (W, H), "#f1f5f9")
     d = ImageDraw.Draw(img)
     # 窗口标题栏
-    d.rectangle([0, 0, W, 64], fill="#0f172a")
+    d.rectangle([0, 0, W, 64 * S], fill="#0f172a")
     for i, c in enumerate(["#ef4444", "#f59e0b", "#22c55e"]):
-        d.ellipse([26 + i * 34, 24, 44 + i * 34, 42], fill=c)
-    d.text((140, 16), "Project Dashboard", font=font(FONT_BOLD, 24), fill="#ffffff")
-    d.text((852, 22), "v2.4", font=font(FONT_REG, 16), fill="#94a3b8")
+        d.ellipse([(26 + i * 34) * S, 24 * S, (44 + i * 34) * S, 42 * S], fill=c)
+    d.text((140 * S, 16 * S), "Project Dashboard", font=font(FONT_BOLD, 24 * S), fill="#ffffff")
+    d.text((852 * S, 22 * S), "v2.4", font=font(FONT_REG, 16 * S), fill="#94a3b8")
     # KPI 卡片（顶部色条 + 名称 + 数值）
     cards = [
         ("#2563eb", "Total Tasks", "128"),
@@ -82,27 +85,27 @@ def make_demo_input():
         ("#d97706", "In Progress", "23"),
         ("#dc2626", "Blocked", "19"),
     ]
-    cw, gap, cy = 210, 16, 88
+    cw, gap, cy = 210 * S, 16 * S, 88 * S
     for i, (accent, label, value) in enumerate(cards):
-        x = 24 + i * (cw + gap)
-        d.rounded_rectangle([x, cy, x + cw, cy + 92], radius=10, fill="#ffffff", outline="#e2e8f0", width=1)
-        d.rectangle([x, cy, x + cw, cy + 6], fill=accent)
-        d.text((x + 14, cy + 22), label, font=font(FONT_REG, 16), fill="#64748b")
-        d.text((x + 14, cy + 46), value, font=font(FONT_BOLD, 30), fill="#0f172a")
+        x = 24 * S + i * (cw + gap)
+        d.rounded_rectangle([x, cy, x + cw, cy + 92 * S], radius=10 * S, fill="#ffffff", outline="#e2e8f0", width=1 * S)
+        d.rectangle([x, cy, x + cw, cy + 6 * S], fill=accent)
+        d.text((x + 14 * S, cy + 22 * S), label, font=font(FONT_REG, 16 * S), fill="#64748b")
+        d.text((x + 14 * S, cy + 46 * S), value, font=font(FONT_BOLD, 30 * S), fill="#0f172a")
     # 柱状图卡片
-    d.rounded_rectangle([24, 204, 560, 420], radius=10, fill="#ffffff", outline="#e2e8f0", width=1)
-    d.text((40, 220), "Weekly Output", font=font(FONT_BOLD, 18), fill="#334155")
+    d.rounded_rectangle([24 * S, 204 * S, 560 * S, 420 * S], radius=10 * S, fill="#ffffff", outline="#e2e8f0", width=1 * S)
+    d.text((40 * S, 220 * S), "Weekly Output", font=font(FONT_BOLD, 18 * S), fill="#334155")
     bars = [42, 68, 55, 90, 73, 105, 84, 60]
-    bx0, bw, bgap = 48, 48, 18
+    bx0, bw, bgap = 48 * S, 48 * S, 18 * S
     for i, h in enumerate(bars):
         x = bx0 + i * (bw + bgap)
-        d.rounded_rectangle([x, 410 - h, x + bw, 410], radius=3, fill=("#2563eb" if i == 5 else "#cbd5e1"))
-    d.line([(40, 410), (540, 410)], fill="#cbd5e1", width=2)
+        d.rounded_rectangle([x, (410 - h) * S, x + bw, 410 * S], radius=3 * S, fill=("#2563eb" if i == 5 else "#cbd5e1"))
+    d.line([(40 * S, 410 * S), (540 * S, 410 * S)], fill="#cbd5e1", width=2 * S)
     for i, day in enumerate("MTWTFSS"):
-        d.text((bx0 + i * (bw + bgap) + 14, 418), day, font=font(FONT_REG, 13), fill="#94a3b8")
+        d.text((bx0 + i * (bw + bgap) + 14 * S, 418 * S), day, font=font(FONT_REG, 13 * S), fill="#94a3b8")
     # 活动列表卡片
-    d.rounded_rectangle([584, 204, 936, 420], radius=10, fill="#ffffff", outline="#e2e8f0", width=1)
-    d.text((600, 220), "Recent Activity", font=font(FONT_BOLD, 18), fill="#334155")
+    d.rounded_rectangle([584 * S, 204 * S, 936 * S, 420 * S], radius=10 * S, fill="#ffffff", outline="#e2e8f0", width=1 * S)
+    d.text((600 * S, 220 * S), "Recent Activity", font=font(FONT_BOLD, 18 * S), fill="#334155")
     acts = [
         ("#22c55e", "Deploy v2.2 to production"),
         ("#2563eb", "Fix OCR bounding box bug"),
@@ -110,18 +113,18 @@ def make_demo_input():
         ("#22c55e", "Update deployment docs"),
         ("#8b5cf6", "Run 21 offline tests"),
     ]
-    ay = 254
+    ay = 254 * S
     for color, text in acts:
-        d.ellipse([602, ay + 4, 614, ay + 16], fill=color)
-        d.text((626, ay), text, font=font(FONT_REG, 16), fill="#334155")
-        ay += 32
+        d.ellipse([602 * S, ay + 4 * S, 614 * S, ay + 16 * S], fill=color)
+        d.text((626 * S, ay), text, font=font(FONT_REG, 16 * S), fill="#334155")
+        ay += 32 * S
     # 底部状态条
-    d.rounded_rectangle([24, 444, 936, 500], radius=10, fill="#ffffff", outline="#e2e8f0", width=1)
-    d.ellipse([44, 466, 58, 480], fill="#22c55e")
-    d.text((70, 460), "All systems operational", font=font(FONT_BOLD, 16), fill="#15803d")
-    d.ellipse([320, 466, 334, 480], fill="#2563eb")
-    d.text((346, 460), "Local only · no cloud upload", font=font(FONT_BOLD, 16), fill="#1d4ed8")
-    d.text((700, 462), "synthetic demo", font=font(FONT_REG, 15), fill="#94a3b8")
+    d.rounded_rectangle([24 * S, 444 * S, 936 * S, 500 * S], radius=10 * S, fill="#ffffff", outline="#e2e8f0", width=1 * S)
+    d.ellipse([44 * S, 466 * S, 58 * S, 480 * S], fill="#22c55e")
+    d.text((70 * S, 460 * S), "All systems operational", font=font(FONT_BOLD, 16 * S), fill="#15803d")
+    d.ellipse([320 * S, 466 * S, 334 * S, 480 * S], fill="#2563eb")
+    d.text((346 * S, 460 * S), "Local only · no cloud upload", font=font(FONT_BOLD, 16 * S), fill="#1d4ed8")
+    d.text((700 * S, 462 * S), "synthetic demo", font=font(FONT_REG, 15 * S), fill="#94a3b8")
     out = EXAMPLES / "demo_input.png"
     img.save(out)
     return str(out)
@@ -129,7 +132,15 @@ def make_demo_input():
 
 # ============ 1. 真实工具输出演示（before / after） ============
 def make_demo_annotated():
-    demo_input = make_demo_input()
+    demo_input = make_demo_input()  # 2x 原生渲染，识别更准
+    src_full = Image.open(demo_input).convert("RGB")
+    resample = getattr(Image, "Resampling", Image).LANCZOS
+    display = src_full.resize((960, 600), resample)
+    import tempfile
+
+    fd, tmp_analysis = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    display.save(tmp_analysis)
 
     # 真实调用：cv_locate 颜色定位（KPI 卡片色条）
     locate_boxes = []
@@ -142,6 +153,8 @@ def make_demo_annotated():
             for a, b, c, e in re.findall(r"像素框 \[(\d+),(\d+),(\d+),(\d+)\]", r["content"][0]["text"])
         ]
         locate_boxes.extend(boxes)
+    # 2x 坐标折算回 1x 显示
+    locate_boxes = [(a // 2, b // 2, c // 2, e // 2, tag) for a, b, c, e, tag in locate_boxes]
 
     # 真实调用：文字识别，优先 PaddleOCR，失败回退 Windows OCR
     ocr_engine = "PaddleOCR"
@@ -159,7 +172,7 @@ def make_demo_annotated():
             body = body.split("\n\n", 1)[1] if "\n\n" in body else body
         ocr_lines = [ln for ln in body.splitlines()[1:] if ln.strip()]
     else:
-        ocr_boxes = [(l["x"], l["y"], l["w"], l["h"], l["text"]) for l in lines]
+        ocr_boxes = [(l["x"] // 2, l["y"] // 2, l["w"] // 2, l["h"] // 2, l["text"]) for l in lines]
         ocr_lines = [t for *_, t in ocr_boxes]
     print("OCR engine:", ocr_engine, "| lines:", len(ocr_lines))
     for ln in ocr_lines[:8]:
@@ -170,7 +183,7 @@ def make_demo_annotated():
     try:
         ar = server.call_analyze_image(
             {
-                "file_path": demo_input,
+                "file_path": tmp_analysis,
                 "mode": "quick",
                 "prompt": "请用三句话总结这张截图的内容：界面类型、关键数据、整体状态。",
             }
@@ -184,9 +197,14 @@ def make_demo_annotated():
             analysis_text = at.strip()
     except Exception as e:  # noqa: BLE001
         analysis_text = f"（本地模型分析失败：{e}）"
+    finally:
+        try:
+            os.unlink(tmp_analysis)
+        except OSError:
+            pass
     print("analysis:", analysis_text[:120].replace("\n", " "))
 
-    src = Image.open(demo_input).convert("RGB")
+    src = display
     W, H = src.size
     panel_w = 520
     head_h = 96

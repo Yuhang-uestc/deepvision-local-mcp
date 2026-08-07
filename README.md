@@ -42,7 +42,7 @@ tests/                     离线单元测试 + 真机冒烟测试
 docs/                      架构说明 / 部署手册 / 开发记录
 check.ps1                  环境自检
 setup.ps1 / install.ps1 / install-extra.ps1 / register-mcp.ps1 / install-skill.ps1   安装与注册脚本
-test_image.png             程序生成的合成测试图（不含任何真实信息）
+examples/                  合成示例图与展示图（demo_input / demo_annotated / social_preview / architecture）
 LICENSE / CHANGELOG.md / CONTRIBUTING.md / requirements.txt
 ```
 
