@@ -165,16 +165,40 @@ def make_demo_annotated():
     for ln in ocr_lines[:8]:
         print("  -", ln)
 
+    # 真实调用：本地视觉模型综合理解（quick 模式，qwen3-vl）
+    analysis_text = ""
+    try:
+        ar = server.call_analyze_image(
+            {
+                "file_path": demo_input,
+                "mode": "quick",
+                "prompt": "请用三句话总结这张截图的内容：界面类型、关键数据、整体状态。",
+            }
+        )
+        if ar.get("isError"):
+            analysis_text = f"（本地模型分析失败：{ar['content'][0]['text']}）"
+        else:
+            at = ar["content"][0]["text"]
+            if at.startswith("[安全提示]"):
+                at = at.split("\n\n", 1)[1] if "\n\n" in at else at
+            analysis_text = at.strip()
+    except Exception as e:  # noqa: BLE001
+        analysis_text = f"（本地模型分析失败：{e}）"
+    print("analysis:", analysis_text[:120].replace("\n", " "))
+
     src = Image.open(demo_input).convert("RGB")
     W, H = src.size
-    panel_w = 430
+    panel_w = 520
     head_h = 96
-    canvas = Image.new("RGB", (W + panel_w + 46, H + head_h), (15, 23, 42))
+    analysis_h = 190
+    canvas = Image.new(
+        "RGB", (W + 40 + panel_w + 30, head_h + H + 24 + analysis_h), (15, 23, 42)
+    )
     d = ImageDraw.Draw(canvas)
 
     # 顶部标题条
     d.text((30, 22), "本地识图 MCP · 真实工具输出", font=font(FONT_BOLD, 30), fill="#ffffff")
-    d.text((30, 64), "UI 截图理解：颜色定位 + 文字识别（合成示例，无真实数据）", font=font(FONT_REG, 18), fill="#94a3b8")
+    d.text((30, 64), "UI 截图理解：定位 + 文字识别 + 本地模型分析（合成示例，无真实数据）", font=font(FONT_REG, 18), fill="#94a3b8")
 
     # 左侧：原图 + 标注框
     off_y = head_h
@@ -187,16 +211,19 @@ def make_demo_annotated():
         draw.rectangle([30 + x, off_y + y, 30 + x + w, off_y + y + h], outline="#4ade80", width=2)
 
     # 右侧：结果面板
-    px = W + 30 + 30
+    px = W + 40
     d.text((px, off_y + 8), "① 颜色定位 cv_locate", font=font(FONT_BOLD, 20), fill="#00e5ff")
     y = off_y + 42
-    for i, (a, b, c, e, tag) in enumerate(locate_boxes, 1):
+    for i, (a, b, c, e, tag) in enumerate(locate_boxes[:4], 1):
         d.text((px, y), f"{tag}  [{a},{b},{c},{e}]", font=font(FONT_REG, 16), fill="#cbd5e1")
+        y += 26
+    if len(locate_boxes) > 4:
+        d.text((px, y), "...", font=font(FONT_REG, 16), fill="#64748b")
         y += 26
     y += 10
     d.text((px, y), f"② 文字识别 · {ocr_engine}", font=font(FONT_BOLD, 20), fill="#4ade80")
     y += 34
-    for ln in ocr_lines[:14]:
+    for ln in ocr_lines[:12]:
         for wl in wrap_text(d, ln, font(FONT_REG, 16), panel_w - 28):
             if y > H + off_y - 46:
                 break
@@ -205,6 +232,17 @@ def make_demo_annotated():
         if y > H + off_y - 46:
             break
     d.text((px, H + off_y - 24), "图片全程在本机处理 · 未上传任何云端", font=font(FONT_REG, 14), fill="#64748b")
+
+    # 底部：综合分析块（真实模型输出）
+    ay0 = head_h + H + 24
+    d.text((30, ay0 + 6), "③ 综合分析 · analyze_image（本地 qwen3-vl 真实输出）", font=font(FONT_BOLD, 20), fill="#fbbf24")
+    ay = ay0 + 46
+    f_ana = font(FONT_REG, 18)
+    for wl in wrap_text(d, analysis_text or "（本地模型未返回内容）", f_ana, W + panel_w + 40 - 60):
+        if ay > ay0 + analysis_h - 20:
+            break
+        d.text((30, ay), wl, font=f_ana, fill="#e2e8f0")
+        ay += 30
 
     out = EXAMPLES / "demo_annotated.png"
     canvas.save(out)
