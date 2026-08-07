@@ -53,7 +53,8 @@ skills/vision-perceive/    多轮识图闭环 skill
 tests/                     离线单元测试 + 真机冒烟测试
 docs/                      架构说明 / 部署手册 / 开发记录
 check.ps1                  环境自检
-setup.ps1 / install-extra.ps1 / register-mcp.ps1 / install-skill.ps1   安装与注册脚本
+setup.ps1 / install.ps1 / install-extra.ps1 / register-mcp.ps1 / install-skill.ps1   安装与注册脚本
+test_image.png             程序生成的合成测试图（不含任何真实信息）
 LICENSE / CHANGELOG.md / CONTRIBUTING.md / requirements.txt
 ```
 
@@ -106,7 +107,7 @@ powershell -ExecutionPolicy Bypass -File install-skill.ps1
 
 | 工具 | 用途 |
 |---|---|
-| `analyze_image` | 本地视觉模型分析图片；`mode=quick` 快速精简输出（默认 4B，自动回退）、`mode=detailed` 完整（默认 8B）；`file_paths` 多图对比；`num_ctx`/`temperature` 可调 |
+| `analyze_image` | 本地视觉模型分析图片；`mode=quick` 快速精简输出（默认 4B，自动回退）、`mode=detailed` 完整（默认 8B）；`file_paths` 可传多图（qwen3-vl 下仅首图生效，对比请分别分析单张）；`num_ctx`/`temperature` 可调 |
 | `image_info` | 读取尺寸/格式/大小，确定坐标系 |
 | `ocr_extract` | 文字提取；`engine=auto` 优先 PaddleOCR，否则 Windows OCR（含位置） |
 | `detect_objects` | YOLO 检测 COCO 80 类，返回类别/置信度/坐标框；可 `save_path` 存标注图 |
@@ -116,6 +117,7 @@ powershell -ExecutionPolicy Bypass -File install-skill.ps1
 | `crop_image` | 裁切 + 放大局部区域，小字/小目标二次识别 |
 | `draw_bounding_box` | 一次画多个框（boxes 数组），可视化验证 |
 | `list_local_models` | 查看本机 Ollama 模型 |
+| `vision_status` | 排障：版本、Ollama 连通性、模型就绪、可选依赖、缓存/重试配置 |
 
 ## 定位工具箱（该用哪个）
 
@@ -214,7 +216,7 @@ python -c "from ultralytics import YOLO; YOLO('yoloe-v8s-seg.pt')"
 python tests\test_server.py
 ```
 
-离线测试用 mock Ollama 验证协议与全部工具（analyze / 缓存命中 / 重试 / crop / draw / cv_locate / 错误路径 / 输出目录限制）。
+离线测试用 mock Ollama 验证协议与全部工具，共 21 项（analyze / 缓存命中 / 瞬时错误重试 / 相对路径拒绝 / 伪格式拒绝 / 可选大图缩放 / crop / draw / cv_locate / 错误路径 / 输出目录限制）。
 
 ## 开源与许可
 
