@@ -238,6 +238,68 @@ python tests\test_server.py
 - **8B 模型速度**：每次识图约 20~60 秒，可换 4B 提速。
 - **模板匹配对纯色模板失效**：请裁取含纹理/边缘的区域作为模板。
 
+## 兼容性（换工具 / 换模型 / 换平台）
+
+本项目按标准 MCP 协议设计，**视觉能力与主模型、客户端解耦**。当前已验证组合：**Codex + DeepSeek（Windows）**；
+以下组合按标准协议兼容，**未逐项实测**，遇到问题按"部署与常见问题"排查。
+
+### 1. 换主模型（脑）
+
+server.py 不依赖 DeepSeek，只认 MCP 协议。只要你的客户端支持 MCP 工具调用，任何主流模型
+（Claude、GPT、Qwen、GLM、Kimi 等）都能作为"脑"使用——在客户端里切换模型即可，本项目无需改动。
+工具描述为中文，主流模型均可正确读取。
+
+### 2. 换客户端（工具）
+
+把 server.py 注册成标准 MCP stdio 服务即可：
+
+```json
+{
+  "mcpServers": {
+    "local_vision": {
+      "command": "python",
+      "args": ["C:/绝对路径/server.py"]
+    }
+  }
+}
+```
+
+| 客户端 | 注册方式 | 说明 |
+|---|---|---|
+| Codex | `register-mcp.ps1` / `setup.ps1` | 已自动化，含 skill 安装 |
+| Claude Code | 项目根目录 `.mcp.json`，或 `claude mcp add` | 同样支持 Agent Skills（SKILL.md） |
+| Cursor | 设置 → MCP → 添加（写入 `~/.cursor/mcp.json`）或项目 `.cursor/mcp.json` | 无原生 skills，可用 rules 引用多轮流程 |
+| Trae | 设置 → MCP → 创建 → 手动配置（stdin 类型） | 同上 |
+| opencode / Windsurf / Cline / JetBrains / Cherry Studio 等 | 各自 MCP 设置界面，填入同一段配置 | MCP 生态通用 |
+
+### 3. 换视觉模型（眼）
+
+Ollama 上任意视觉模型都可用：
+
+```powershell
+ollama pull qwen3-vl:4b        # 快速模式（更小更快）
+ollama pull llava:13b          # 或 llava / gemma3-v 等其他视觉模型
+```
+
+通过环境变量或调用参数切换：`OLLAMA_VISION_MODEL`（detailed）、`VISION_MODEL_QUICK`（quick）、或 `analyze_image` 的 `model` 参数。
+
+### 4. skill 移植（可选）
+
+- **Codex**：`install-skill.ps1` 一键安装
+- **Claude Code**：skill 就是标准 `SKILL.md`（YAML frontmatter + Markdown），直接复制 `skills/vision-perceive` 到项目 `.claude/skills/` 或 `~/.claude/skills/` 即可，格式天然兼容
+- **Cursor / Trae 等**：没有原生 skills，但 MCP 工具本身可用；把 `SKILL.md` 里的"模式决策 + 多轮流程"复制进 rules/自定义指令即可获得同等闭环效果
+
+### 5. 平台说明
+
+- **Windows**：完整测试路径（含 Windows 内置 OCR 兜底）
+- **Linux / macOS**：server.py、Ollama、ultralytics、PaddleOCR 均跨平台可用；但 `win_ocr.ps1`（Windows OCR 兜底）不可用，OCR 需依赖 PaddleOCR（跨平台），或自行接入 tesseract 等
+- `.ps1` 安装脚本仅 Windows；其他平台按上面的 MCP 配置 JSON 手动注册即可
+
+### 明确不兼容 / 注意
+
+- `file_paths` 多图对比在 qwen3-vl 下实测只认第一张图（与客户端无关，是模型行为）
+- 坐标类任务请走检测/分割工具，别指望任何视觉模型直接报坐标
+
 ## 常见问题
 
 - **连不上 Ollama**：确认系统托盘有 Ollama 图标，或命令行先跑 `ollama list`。
