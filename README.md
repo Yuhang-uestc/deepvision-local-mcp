@@ -3,6 +3,20 @@
 给纯文本主模型（DeepSeek 等）补上本地"看图"能力的 MCP server + 多轮识图闭环 skill。
 **图片只在本机处理**：读取本地图片 → 本地 Ollama 视觉模型 / YOLO / OpenCV / 系统 OCR → 返回文字与坐标，全程不出机器。
 
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
+![Platform](https://img.shields.io/badge/platform-Windows-0078d6.svg)
+![MCP](https://img.shields.io/badge/MCP-stdio-orange.svg)
+
+## 特性
+
+- 🖼️ **本地看图**：图片不出机器，隐私安全；DeepSeek 等纯文本模型也能"看图"
+- 🔧 **专业工具分工**：视觉模型描述、OCR 文字、YOLO 检测/分割、零样本检测、颜色/模板定位、裁切放大，各管一段
+- 🔄 **多轮识图闭环**：概览 → 聚焦 → 文字 → 定位 → 放大 → 交叉校验 → 综合报告，过滤幻觉
+- ⚡ **快慢双模式**：顺手附图走 quick（默认 4B、秒级返回），认真分析走 detailed（8B）
+- 🛡️ **部署友好**：server 零依赖起步；PaddleOCR / YOLOE 等重型能力可选、自动降级；下载支持断点续传与完整性校验
+- 📦 **开箱脚本**：环境自检、MCP 注册、skill 安装、可选依赖一键装
+
 ## 为什么有这个东西
 
 DeepSeek 等纯文本模型没有视觉能力，但通过 MCP 工具可以获得"看图"能力：由本地视觉模型负责"看"，主模型负责"想"。
@@ -31,13 +45,14 @@ server.py（Python，基础零依赖）
 ## 文件
 
 ```
-server.py               MCP 服务器本体（单文件）
-win_ocr.ps1             Windows 内置 OCR 调用脚本
-skills/vision-perceive/ 多轮识图闭环 skill
-tests/test_server.py    离线测试（mock Ollama）
-check.ps1               环境自检
-install.ps1 / register-mcp.ps1 / install-skill.ps1   安装脚本
-LICENSE / .gitignore / requirements.txt
+server.py                  MCP 服务器本体（单文件，基础零依赖）
+win_ocr.ps1                Windows 内置 OCR 调用脚本
+skills/vision-perceive/    多轮识图闭环 skill
+tests/                     离线单元测试 + 真机冒烟测试
+docs/                      架构说明 / 部署手册 / 开发记录
+check.ps1                  环境自检
+install*.ps1 / register-mcp.ps1   安装与注册脚本
+LICENSE / CHANGELOG.md / CONTRIBUTING.md / requirements.txt
 ```
 
 ## 环境要求
@@ -194,6 +209,7 @@ python tests\test_server.py
 
 ## 部署与排障
 
+- [架构说明](docs/架构说明.md) — 设计目标、分层、数据流、设计决策、扩展点
 - [部署与常见问题（用户向）](docs/部署与常见问题.md) — 照做即可部署，按症状查问题
 - [开发记录与踩坑（内部）](docs/开发记录与踩坑.md) — 开发过程所有问题的根因与对策
 

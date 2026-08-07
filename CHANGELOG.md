@@ -1,0 +1,44 @@
+# Changelog
+
+## v2.1.1（2026-08-07）
+
+### 修复
+- PaddleOCR 改用 `paddle_static` 引擎并禁用 HPI/oneDNN，规避 Paddle 3.x 的 `ConvertPirAttribute2RuntimeAttribute` bug（新增 `PADDLEOCR_KEEP_ONEDNN=1` 开关供用户自选保留）
+- PaddleOCR 回退 Windows OCR 时在返回结果中附失败原因，不再静默
+- 模型下载改为 GitHub 直连优先，curl 加 `--retry-all-errors` 断流自动续传
+
+### 文档
+- 新增用户向《部署与常见问题》、开发者《开发记录与踩坑》、《架构说明》
+- README 增加特性、项目结构、文档入口
+- skill 增加"大图优先 quick + 局部裁切"规则
+
+## v2.1.0（2026-08-07）
+
+### 新增
+- `analyze_image` 快速/详细双模式（quick 默认 4B 自动回退 8B、上下文 4096、精简输出）
+- `segment_objects` 像素级分割（掩膜 + 面积统计）
+- `ocr_extract` 支持 PaddleOCR 可选引擎（auto/windows/paddle）
+- YOLOE 零样本检测支持（含 mobileclip_blt.ts 后台下载与进度返回）
+- YOLO-World 轻量零样本备选（约 25MB，无需 530MB 权重）
+- `install-extra.ps1` 一键安装 PaddleOCR + CLIP
+
+### 修复
+- .ps1 脚本转 UTF-8 with BOM，修复 PowerShell 5.1 中文解析报错
+- PaddleOCR 3.x 构造参数兼容
+
+## v2.0.0（2026-08-06）
+
+### 新增
+- `crop_image` 裁切放大、`cv_locate` 颜色/模板定位、`detect_by_text` 零样本检测入口
+- `draw_bounding_box` 支持一次多框（boxes 数组）、中文标签
+- `analyze_image` 支持多图对比（file_paths）、温度参数
+- `image_info` 工具
+- 输出安全：`VISION_OUTPUT_DIR`、禁止覆盖输入图
+
+## v1.0.0（2026-08-05）
+
+### 新增
+- 首个可用版本：`analyze_image` / `ocr_extract` / `draw_bounding_box` / `detect_objects` / `list_local_models`
+- vision-perceive 多轮识图闭环 skill
+- Windows 内置 OCR 桥接、YOLOv8 检测接入
+- MCP 注册与 skill 安装脚本
