@@ -7,12 +7,13 @@
 - `analyze_image` / `ocr_extract` 结果缓存：相同图片内容+参数命中缓存秒回（按内容哈希，可 `LOCAL_VISION_CACHE=0` 关闭）
 - Ollama 瞬时故障自动重试（429/5xx/网络抖动，指数退避，默认 2 次；404 不重试）
 - `analyze_image` / `ocr_extract` 返回带"不可信数据"安全前缀，防图片内文字提示注入
+- PaddleOCR 初始化加锁串行化，避免并发首次初始化互相踩 `~/.paddlex` 缓存锁（Windows 上表现为 Permission denied）
 
 ### 文档
 - README 新增"健壮性与安全"章节、环境变量表补 5 个新变量
 - README 兼容性章节补充"各客户端粘贴图片落盘位置表"与"宿主 MCP 超时建议"
 - 架构说明更新工具数（11 个）、工具表与关键设计决策
-- 开发记录补同类项目调研心得与本次改动
+- 开发记录补同类项目调研心得与本次改动；部署手册补充 `PADDLE_PDX_CACHE_HOME` 缓存重定位与多账号场景说明
 
 ### 测试
 - 离线测试新增：缓存命中、瞬时错误重试、不可信前缀、vision_status
