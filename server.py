@@ -40,6 +40,8 @@ Local Vision MCP Server v2
   LOCAL_VISION_CACHE_MAX  缓存最大条数，默认 64
   LOCAL_VISION_RETRIES  Ollama 瞬时故障重试次数，默认 2
   LOCAL_VISION_RETRY_BASE 重试退避基数（秒），默认 2.0
+  LOCAL_VISION_MAX_DIMENSION 可选。analyze_image 发送给 Ollama 前的最大边长(px)，默认 0=关闭；
+                          开启后超限大图自动等比缩小，防 detailed 卡死（全局细节会略降，要精度请走局部裁切）
   DETECTION_MODEL       默认 COCO 检测模型，默认 yolov8n.pt
   DETECTION_TEXT_MODEL   默认零样本检测模型，默认 yoloe-v8s-seg.pt
   VISION_OUTPUT_DIR     可选。设置后所有生成文件只能写入该目录
@@ -71,6 +73,7 @@ LOCAL_VISION_CACHE_TTL = int(os.environ.get("LOCAL_VISION_CACHE_TTL", "1800"))
 LOCAL_VISION_CACHE_MAX = int(os.environ.get("LOCAL_VISION_CACHE_MAX", "64"))
 LOCAL_VISION_RETRIES = int(os.environ.get("LOCAL_VISION_RETRIES", "2"))
 LOCAL_VISION_RETRY_BASE = float(os.environ.get("LOCAL_VISION_RETRY_BASE", "2.0"))
+LOCAL_VISION_MAX_DIMENSION = int(os.environ.get("LOCAL_VISION_MAX_DIMENSION", "0"))
 
 DEFAULT_PROMPT = "请详细描述这张图片的内容，包括画面主体、布局和图中出现的所有文字。"
 QUICK_PROMPT = "请用简洁的中文概括这张图片的主要内容，包括类型、主体和要点，不超过100字。"
@@ -522,16 +525,80 @@ def _cache_put(key, value):
         _CACHE[key] = (now, value)
 
 
-def read_image_b64(file_path: str) -> str:
+_IMAGE_MAGIC = (
+    (b"\xff\xd8\xff", "JPEG"),
+    (b"\x89PNG\r\n\x1a\n", "PNG"),
+    (b"GIF87a", "GIF"),
+    (b"GIF89a", "GIF"),
+    (b"BM", "BMP"),
+    (b"II*\x00", "TIFF(小端)"),
+    (b"MM\x00*", "TIFF(大端)"),
+)
+
+
+def _check_image_magic(file_path: str) -> str:
+    """按文件真实内容判断图片格式，扩展名与内容不符时给出明确报错。"""
+    with open(file_path, "rb") as f:
+        head = f.read(12)
+    for magic, name in _IMAGE_MAGIC:
+        if head.startswith(magic):
+            return name
+    if head.startswith(b"RIFF") and len(head) >= 12 and head[8:12] == b"WEBP":
+        return "WEBP"
+    raise ValueError(f"文件不是支持的图片格式（JPEG/PNG/GIF/BMP/TIFF/WEBP）：{file_path}")
+
+
+def _validate_input_image(file_path: str) -> None:
+    """统一输入校验：绝对路径 + 文件存在 + 真实格式。"""
+    if not os.path.isabs(file_path):
+        raise ValueError(
+            "请使用图片的绝对路径（如 C:/Users/xxx/photo.png），相对路径可能解析到错误目录。"
+        )
     if not os.path.isfile(file_path):
         raise FileNotFoundError(f"找不到图片文件：{file_path}")
+    _check_image_magic(file_path)
+
+
+def read_image_b64(file_path: str) -> str:
+    return _load_image_b64(file_path, 0)[0]
+
+
+def _load_image_b64(file_path: str, max_dimension: int):
+    """读取图片为 base64。返回 (b64, 是否被缩放)。
+
+    max_dimension>0 时超长边自动等比缩小（防 detailed 大图卡死）；全局细节会略降，
+    需要精度时仍应走 crop_image 局部裁切放大。
+    """
+    _validate_input_image(file_path)
     size = os.path.getsize(file_path)
     if size > MAX_IMAGE_BYTES:
         raise ValueError(
             f"图片过大（{size / 1024 / 1024:.1f}MB > {MAX_IMAGE_BYTES / 1024 / 1024:.0f}MB），请换一张较小的图"
         )
-    with open(file_path, "rb") as f:
-        return base64.b64encode(f.read()).decode("ascii")
+    if max_dimension <= 0:
+        with open(file_path, "rb") as f:
+            return base64.b64encode(f.read()).decode("ascii"), False
+    try:
+        from PIL import Image
+
+        import io
+    except ImportError:
+        raise ValueError("LOCAL_VISION_MAX_DIMENSION 需要 Pillow，请先安装：python -m pip install Pillow")
+    with Image.open(file_path) as im:
+        w, h = im.size
+        if max(w, h) <= max_dimension:
+            with open(file_path, "rb") as f:
+                return base64.b64encode(f.read()).decode("ascii"), False
+        scale = max_dimension / float(max(w, h))
+        nw = max(1, int(round(w * scale)))
+        nh = max(1, int(round(h * scale)))
+        if im.mode != "RGB":
+            im = im.convert("RGB")
+        resample = getattr(Image, "Resampling", Image).LANCZOS
+        im = im.resize((nw, nh), resample)
+        buf = io.BytesIO()
+        im.save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode("ascii"), True
 
 
 def _require_pillow():
@@ -752,7 +819,10 @@ def call_analyze_image(args: dict) -> dict:
     options.setdefault("num_ctx", 4096 if mode == "quick" else 8192)
 
     try:
-        images = [read_image_b64(p) for p in paths]
+        loaded = [_load_image_b64(p, LOCAL_VISION_MAX_DIMENSION) for p in paths]
+        images = [b64 for b64, _ in loaded]
+        if any(resized for _, resized in loaded):
+            log(f"大图已自动缩放（LOCAL_VISION_MAX_DIMENSION={LOCAL_VISION_MAX_DIMENSION}px）")
         cache_key = _cache_key(
             "analyze", paths, model, prompt, json.dumps(options, sort_keys=True, ensure_ascii=False)
         )
@@ -793,8 +863,10 @@ def call_image_info(args: dict) -> dict:
     file_path = str(args.get("file_path", "")).strip()
     if not file_path:
         return err_result("缺少 file_path 参数：请提供本地图片的绝对路径")
-    if not os.path.isfile(file_path):
-        return err_result(f"找不到图片文件：{file_path}")
+    try:
+        _validate_input_image(file_path)
+    except (ValueError, FileNotFoundError) as e:
+        return err_result(str(e))
     try:
         Image = _require_pillow()[0]
     except ImportError as e:
@@ -1077,8 +1149,10 @@ def call_ocr_extract(args: dict) -> dict:
     file_path = str(args.get("file_path", "")).strip()
     if not file_path:
         return err_result("缺少 file_path 参数：请提供本地图片的绝对路径")
-    if not os.path.isfile(file_path):
-        return err_result(f"找不到图片文件：{file_path}")
+    try:
+        _validate_input_image(file_path)
+    except (ValueError, FileNotFoundError) as e:
+        return err_result(str(e))
     lang = str(args.get("language", "")).strip() or "zh-Hans-CN"
     engine = str(args.get("engine", "auto")).strip().lower()
     if engine not in ("auto", "windows", "paddle"):
@@ -1116,8 +1190,10 @@ def call_crop_image(args: dict) -> dict:
     file_path = str(args.get("file_path", "")).strip()
     if not file_path:
         return err_result("缺少 file_path 参数")
-    if not os.path.isfile(file_path):
-        return err_result(f"找不到图片文件：{file_path}")
+    try:
+        _validate_input_image(file_path)
+    except (ValueError, FileNotFoundError) as e:
+        return err_result(str(e))
     try:
         Image = _require_pillow()[0]
     except ImportError as e:

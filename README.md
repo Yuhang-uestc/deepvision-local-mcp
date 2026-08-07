@@ -202,6 +202,9 @@ python -c "from ultralytics import YOLO; YOLO('yoloe-v8s-seg.pt')"
 - **自动重试**：Ollama 瞬时故障（HTTP 429/5xx、网络抖动）自动指数退避重试（默认 2 次），模型不存在（404）不重试，直接给出安装提示。
 - **不可信数据防护**：图片可能包含诱导性文字（如"忽略之前的指令"），因此 `analyze_image` / `ocr_extract` 的返回都带
   `[安全提示]` 前缀，提醒主模型把图片内容当数据、不当指令。
+- **输入校验**：主要看图工具要求绝对路径，并按文件真实内容（magic-byte）校验格式，扩展名造假或传错文件会得到明确报错而非奇怪的解析错误。
+- **可选大图缩放**：`LOCAL_VISION_MAX_DIMENSION`（默认关闭）可让超长边大图在发给 Ollama 前自动等比缩小，防止 detailed 模式卡死；
+  注意整图缩放会损失全局细节——需要精度的场景仍然先用 `crop_image` 裁出目标区域放大，那个路径不受影响。
 - **一键排障**：`vision_status` 输出版本、Ollama 连通性、两个视觉模型是否已安装、可选依赖状态、缓存/重试配置，
   遇到"连不上 / 没模型 / 缺依赖"先调它。
 
@@ -233,6 +236,7 @@ python tests\test_server.py
 | `LOCAL_VISION_CACHE_MAX` | `64` | 缓存最大条数（超出淘汰最旧） |
 | `LOCAL_VISION_RETRIES` | `2` | Ollama 瞬时故障（429/5xx/网络抖动）重试次数 |
 | `LOCAL_VISION_RETRY_BASE` | `2.0` | 重试退避基数（秒，第 n 次等待 `基数×2^(n-1)`） |
+| `LOCAL_VISION_MAX_DIMENSION` | `0`（关闭） | 可选。`analyze_image` 发送给 Ollama 前的最大边长（px），超限大图自动等比缩小，防 detailed 卡死；全局细节会略降，要精度请用 `crop_image` 局部裁切 |
 | `DETECTION_MODEL` | `yolov8n.pt` | 默认 COCO 检测模型 |
 | `SEGMENTATION_MODEL` | `yolov8n-seg.pt` | 默认分割模型 |
 | `DETECTION_TEXT_MODEL` | `yoloe-v8s-seg.pt` | 默认零样本检测模型 |

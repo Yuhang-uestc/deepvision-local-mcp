@@ -25,6 +25,7 @@ class MockHandler(BaseHTTPRequestHandler):
     # 类级计数器：用于验证缓存命中与重试行为
     generate_calls = 0
     fail_first_generate = 0
+    last_images = []
 
     def log_message(self, *args):
         pass
@@ -55,6 +56,7 @@ class MockHandler(BaseHTTPRequestHandler):
             try:
                 payload = json.loads(body.decode("utf-8"))
                 model = payload.get("model", "")
+                MockHandler.last_images = payload.get("images", [])
             except Exception:
                 model = ""
             if model == "qwen3-vl:4b":
@@ -237,6 +239,43 @@ class TestLocalVision(unittest.TestCase):
         r = self.result(self.client.call("analyze_image", {"file_path": self.test_img, "mode": "quick"}))
         self.assertFalse(r["isError"], r)
         self.assertIn("模拟视觉模型", r["content"][0]["text"])
+
+    def test_relative_path_rejected(self):
+        # 相对路径（即使文件实际存在）应被拒绝，避免解析到错误目录
+        r = self.result(self.client.call("analyze_image", {"file_path": "test_image.png"}))
+        self.assertTrue(r["isError"])
+        self.assertIn("绝对路径", r["content"][0]["text"])
+
+    def test_wrong_format_rejected(self):
+        # 扩展名是 .png 但内容是文本：按 magic-byte 校验应明确拒绝
+        fake = os.path.join(self.tmp.name, "fake.png")
+        with open(fake, "w", encoding="utf-8") as f:
+            f.write("这不是图片，只是文本文件")
+        r = self.result(self.client.call("analyze_image", {"file_path": fake}))
+        self.assertTrue(r["isError"])
+        self.assertIn("不是支持的图片格式", r["content"][0]["text"])
+
+    def test_optional_resize(self):
+        # LOCAL_VISION_MAX_DIMENSION=100 时，320x240 测试图应等比缩小到长边 <=100 再发给 Ollama
+        import base64
+        import io
+        from PIL import Image
+
+        env = dict(self.env)
+        env["LOCAL_VISION_MAX_DIMENSION"] = "100"
+        c = McpClient(env)
+        try:
+            c.init()
+            r = self.result(
+                c.call("analyze_image", {"file_path": self.test_img, "prompt": "resize-test"})
+            )
+            self.assertFalse(r["isError"], r)
+            self.assertTrue(MockHandler.last_images, "应向 Ollama 发送图片")
+            raw = base64.b64decode(MockHandler.last_images[0])
+            with Image.open(io.BytesIO(raw)) as im:
+                self.assertLessEqual(max(im.size), 100)
+        finally:
+            c.close()
 
     def test_image_info(self):
         r = self.result(self.client.call("image_info", {"file_path": self.test_img}))
