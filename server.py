@@ -1217,10 +1217,11 @@ def _asset_mirrors(name: str) -> list:
     if name == MOBILECLIP_TS:
         mirrors.append(MOBILECLIP_TS_MIRROR)
     base = "https://github.com/ultralytics/assets/releases/download/v8.4.0/"
+    # GitHub release 直连通常可达且不会被代理截断；ghproxy 实测对大文件不可靠
     mirrors += [
-        f"https://ghproxy.net/{base}{name}",
-        f"https://ghfast.top/{base}{name}",
         f"{base}{name}",
+        f"https://ghfast.top/{base}{name}",
+        f"https://ghproxy.net/{base}{name}",
     ]
     seen = set()
     out = []
@@ -1285,8 +1286,8 @@ def _download_large_file(url: str, dest: str) -> None:
     curl = shutil.which("curl")
     if curl:
         proc = subprocess.run(
-            [curl, "-L", "-C", "-", "-sS", "--retry", "2", "-o", dest, url],
-            timeout=1800,
+            [curl, "-L", "-C", "-", "-sS", "--retry", "3", "--retry-all-errors", "-o", dest, url],
+            timeout=3600,
         )
         if proc.returncode != 0:
             raise RuntimeError(f"curl 下载失败（退出码 {proc.returncode}）")
