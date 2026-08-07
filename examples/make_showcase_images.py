@@ -67,30 +67,61 @@ def draw_arrow(draw, x1, y1, x2, y2, color, width=4):
 # ============ 0. 合成示例图（无任何真实数据） ============
 def make_demo_input():
     W, H = 960, 600
-    img = Image.new("RGB", (W, H), "#f8fafc")
+    img = Image.new("RGB", (W, H), "#f1f5f9")
     d = ImageDraw.Draw(img)
-    # 水体（左下）
-    d.polygon([(0, 420), (330, 400), (450, 600), (0, 600)], fill="#38bdf8")
-    # 农田（右上区域）
-    d.rectangle([340, 150, 470, 280], fill="#86efac", outline="#4ade80", width=2)
-    d.rectangle([500, 230, 630, 350], fill="#4ade80", outline="#22c55e", width=2)
-    d.rectangle([660, 120, 810, 240], fill="#a7f3d0", outline="#4ade80", width=2)
-    # 道路（斜向灰色带）
-    d.polygon([(455, 0), (525, 0), (610, 600), (535, 600)], fill="#94a3b8")
-    # 建筑（右下小方块群）
-    for bx, by in [(700, 380), (760, 350), (820, 400), (720, 470), (800, 500), (870, 460)]:
-        d.rounded_rectangle([bx, by, bx + 48, by + 42], radius=4, fill="#cbd5e1", outline="#64748b", width=2)
-    # 图例框
-    d.rounded_rectangle([740, 36, 940, 220], radius=12, fill="#ffffff", outline="#cbd5e1", width=2)
-    d.text((762, 52), "Legend", font=font(FONT_BOLD, 20), fill="#334155")
-    legend = [("#1d4ed8", "Water"), ("#15803d", "Farmland"), ("#475569", "Road"), ("#64748b", "Building")]
-    ly = 92
-    for color, label in legend:
-        d.text((762, ly), label, font=font(FONT_BOLD, 18), fill=color)
-        ly += 32
-    # 标题
-    d.text((30, 26), "Remote Sensing Demo", font=font(FONT_BOLD, 30), fill="#0f172a")
-    d.text((30, 68), "Synthetic image · no real data", font=font(FONT_REG, 18), fill="#64748b")
+    # 窗口标题栏
+    d.rectangle([0, 0, W, 64], fill="#0f172a")
+    for i, c in enumerate(["#ef4444", "#f59e0b", "#22c55e"]):
+        d.ellipse([26 + i * 34, 24, 44 + i * 34, 42], fill=c)
+    d.text((140, 16), "Project Dashboard", font=font(FONT_BOLD, 24), fill="#ffffff")
+    d.text((852, 22), "v2.4", font=font(FONT_REG, 16), fill="#94a3b8")
+    # KPI 卡片（顶部色条 + 名称 + 数值）
+    cards = [
+        ("#2563eb", "Total Tasks", "128"),
+        ("#16a34a", "Completed", "86"),
+        ("#d97706", "In Progress", "23"),
+        ("#dc2626", "Blocked", "19"),
+    ]
+    cw, gap, cy = 210, 16, 88
+    for i, (accent, label, value) in enumerate(cards):
+        x = 24 + i * (cw + gap)
+        d.rounded_rectangle([x, cy, x + cw, cy + 92], radius=10, fill="#ffffff", outline="#e2e8f0", width=1)
+        d.rectangle([x, cy, x + cw, cy + 6], fill=accent)
+        d.text((x + 14, cy + 22), label, font=font(FONT_REG, 16), fill="#64748b")
+        d.text((x + 14, cy + 46), value, font=font(FONT_BOLD, 30), fill="#0f172a")
+    # 柱状图卡片
+    d.rounded_rectangle([24, 204, 560, 420], radius=10, fill="#ffffff", outline="#e2e8f0", width=1)
+    d.text((40, 220), "Weekly Output", font=font(FONT_BOLD, 18), fill="#334155")
+    bars = [42, 68, 55, 90, 73, 105, 84, 60]
+    bx0, bw, bgap = 48, 48, 18
+    for i, h in enumerate(bars):
+        x = bx0 + i * (bw + bgap)
+        d.rounded_rectangle([x, 410 - h, x + bw, 410], radius=3, fill=("#2563eb" if i == 5 else "#cbd5e1"))
+    d.line([(40, 410), (540, 410)], fill="#cbd5e1", width=2)
+    for i, day in enumerate("MTWTFSS"):
+        d.text((bx0 + i * (bw + bgap) + 14, 418), day, font=font(FONT_REG, 13), fill="#94a3b8")
+    # 活动列表卡片
+    d.rounded_rectangle([584, 204, 936, 420], radius=10, fill="#ffffff", outline="#e2e8f0", width=1)
+    d.text((600, 220), "Recent Activity", font=font(FONT_BOLD, 18), fill="#334155")
+    acts = [
+        ("#22c55e", "Deploy v2.2 to production"),
+        ("#2563eb", "Fix OCR bounding box bug"),
+        ("#f59e0b", "Review PR #42"),
+        ("#22c55e", "Update deployment docs"),
+        ("#8b5cf6", "Run 21 offline tests"),
+    ]
+    ay = 254
+    for color, text in acts:
+        d.ellipse([602, ay + 4, 614, ay + 16], fill=color)
+        d.text((626, ay), text, font=font(FONT_REG, 16), fill="#334155")
+        ay += 32
+    # 底部状态条
+    d.rounded_rectangle([24, 444, 936, 500], radius=10, fill="#ffffff", outline="#e2e8f0", width=1)
+    d.ellipse([44, 466, 58, 480], fill="#22c55e")
+    d.text((70, 460), "All systems operational", font=font(FONT_BOLD, 16), fill="#15803d")
+    d.ellipse([320, 466, 334, 480], fill="#2563eb")
+    d.text((346, 460), "Local only · no cloud upload", font=font(FONT_BOLD, 16), fill="#1d4ed8")
+    d.text((700, 462), "synthetic demo", font=font(FONT_REG, 15), fill="#94a3b8")
     out = EXAMPLES / "demo_input.png"
     img.save(out)
     return str(out)
@@ -100,9 +131,9 @@ def make_demo_input():
 def make_demo_annotated():
     demo_input = make_demo_input()
 
-    # 真实调用：cv_locate 颜色定位（水体蓝 / 农田绿）
+    # 真实调用：cv_locate 颜色定位（KPI 卡片色条）
     locate_boxes = []
-    for color, tag in (("#38bdf8", "Water"), ("#4ade80", "Farmland")):
+    for color, tag in (("#16a34a", "green"), ("#dc2626", "red")):
         r = server.call_cv_locate(
             {"file_path": demo_input, "mode": "color", "color": color, "tolerance": 28}
         )
@@ -143,7 +174,7 @@ def make_demo_annotated():
 
     # 顶部标题条
     d.text((30, 22), "本地识图 MCP · 真实工具输出", font=font(FONT_BOLD, 30), fill="#ffffff")
-    d.text((30, 64), "颜色定位 + 文字识别（合成示例图，无真实数据）", font=font(FONT_REG, 18), fill="#94a3b8")
+    d.text((30, 64), "UI 截图理解：颜色定位 + 文字识别（合成示例，无真实数据）", font=font(FONT_REG, 18), fill="#94a3b8")
 
     # 左侧：原图 + 标注框
     off_y = head_h
