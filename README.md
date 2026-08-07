@@ -190,6 +190,12 @@ python tests\test_server.py
 | `SEGMENTATION_MODEL` | `yolov8n-seg.pt` | 默认分割模型 |
 | `DETECTION_TEXT_MODEL` | `yoloe-v8s-seg.pt` | 默认零样本检测模型 |
 | `VISION_OUTPUT_DIR` | 项目 `outputs/` | 设置后强制所有生成文件写入该目录 |
+| `PADDLEOCR_KEEP_ONEDNN` | 空 | 设为 `1` 保留 PaddleOCR 的 oneDNN（需 paddle 版本无 bug 或 GPU 版，见部署手册） |
+
+## 部署与排障
+
+- [部署与常见问题（用户向）](docs/部署与常见问题.md) — 照做即可部署，按症状查问题
+- [开发记录与踩坑（内部）](docs/开发记录与踩坑.md) — 开发过程所有问题的根因与对策
 
 ## 已知限制
 

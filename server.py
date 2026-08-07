@@ -743,26 +743,34 @@ def _get_paddle_ocr(lang):
         from paddleocr import PaddleOCR
 
         paddle_lang = "ch" if lang.lower().startswith("zh") else "en"
-        try:
-            # PaddleOCR 2.x：启用角度分类器并关闭日志
-            _PADDLE_OCR_CACHE[key] = PaddleOCR(
-                use_angle_cls=True,
-                lang=paddle_lang,
-                show_log=False,
-                engine="paddle_static",
-                enable_hpi=False,
-                enable_mkldnn=False,
-            )
-        except (TypeError, ValueError):
-            # PaddleOCR 3.x：不再支持 use_angle_cls / show_log；
-            # 必须显式禁用 HPI（HPI 在 CPU 上自动启用 oneDNN，触发 Paddle 3.x 的
-            # ConvertPirAttribute2RuntimeAttribute bug）并改用传统静态引擎。
-            _PADDLE_OCR_CACHE[key] = PaddleOCR(
-                lang=paddle_lang,
-                engine="paddle_static",
-                enable_hpi=False,
-                enable_mkldnn=False,
-            )
+        keep_onednn = os.environ.get("PADDLEOCR_KEEP_ONEDNN", "").strip().lower() in ("1", "true", "yes")
+        if keep_onednn:
+            # 用户自选保留 oneDNN/HPI：仅当 paddle 版本已修复该 bug，或使用 GPU 版 paddle 时建议开启
+            try:
+                _PADDLE_OCR_CACHE[key] = PaddleOCR(use_angle_cls=True, lang=paddle_lang, show_log=False)
+            except (TypeError, ValueError):
+                _PADDLE_OCR_CACHE[key] = PaddleOCR(lang=paddle_lang)
+        else:
+            # 默认：显式禁用 HPI/oneDNN 并改用传统静态引擎，
+            # 规避 Paddle 3.x 的 ConvertPirAttribute2RuntimeAttribute bug（详见 docs/部署与常见问题.md）
+            try:
+                # PaddleOCR 2.x：启用角度分类器并关闭日志
+                _PADDLE_OCR_CACHE[key] = PaddleOCR(
+                    use_angle_cls=True,
+                    lang=paddle_lang,
+                    show_log=False,
+                    engine="paddle_static",
+                    enable_hpi=False,
+                    enable_mkldnn=False,
+                )
+            except (TypeError, ValueError):
+                # PaddleOCR 3.x：不再支持 use_angle_cls / show_log
+                _PADDLE_OCR_CACHE[key] = PaddleOCR(
+                    lang=paddle_lang,
+                    engine="paddle_static",
+                    enable_hpi=False,
+                    enable_mkldnn=False,
+                )
     return _PADDLE_OCR_CACHE[key]
 
 
