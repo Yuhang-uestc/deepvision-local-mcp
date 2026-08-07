@@ -740,6 +740,9 @@ _PADDLE_OCR_CACHE = {}
 def _get_paddle_ocr(lang):
     key = lang
     if key not in _PADDLE_OCR_CACHE:
+        # PaddlePaddle 3.x 在 oneDNN(MKLDNN) 路径下存在已知 bug（ConvertPirAttribute2RuntimeAttribute），
+        # 必须在导入/初始化前禁用，否则 predict 直接报 Unimplemented 错误。
+        os.environ["FLAGS_use_mkldnn"] = "0"
         from paddleocr import PaddleOCR
 
         paddle_lang = "ch" if lang.lower().startswith("zh") else "en"
@@ -1668,6 +1671,8 @@ def main() -> None:
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
+    # PaddleOCR 需要禁用 oneDNN，见 _get_paddle_ocr
+    os.environ["FLAGS_use_mkldnn"] = "0"
     # 统一工作目录到项目目录：YOLOE 的 mobileclip_blt.ts 与模型权重按相对路径查找
     try:
         os.chdir(os.path.dirname(os.path.abspath(__file__)))
