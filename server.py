@@ -740,18 +740,29 @@ _PADDLE_OCR_CACHE = {}
 def _get_paddle_ocr(lang):
     key = lang
     if key not in _PADDLE_OCR_CACHE:
-        # PaddlePaddle 3.x 在 oneDNN(MKLDNN) 路径下存在已知 bug（ConvertPirAttribute2RuntimeAttribute），
-        # 必须在导入/初始化前禁用，否则 predict 直接报 Unimplemented 错误。
-        os.environ["FLAGS_use_mkldnn"] = "0"
         from paddleocr import PaddleOCR
 
         paddle_lang = "ch" if lang.lower().startswith("zh") else "en"
         try:
             # PaddleOCR 2.x：启用角度分类器并关闭日志
-            _PADDLE_OCR_CACHE[key] = PaddleOCR(use_angle_cls=True, lang=paddle_lang, show_log=False)
+            _PADDLE_OCR_CACHE[key] = PaddleOCR(
+                use_angle_cls=True,
+                lang=paddle_lang,
+                show_log=False,
+                engine="paddle_static",
+                enable_hpi=False,
+                enable_mkldnn=False,
+            )
         except (TypeError, ValueError):
-            # PaddleOCR 3.x：不再支持 use_angle_cls / show_log
-            _PADDLE_OCR_CACHE[key] = PaddleOCR(lang=paddle_lang)
+            # PaddleOCR 3.x：不再支持 use_angle_cls / show_log；
+            # 必须显式禁用 HPI（HPI 在 CPU 上自动启用 oneDNN，触发 Paddle 3.x 的
+            # ConvertPirAttribute2RuntimeAttribute bug）并改用传统静态引擎。
+            _PADDLE_OCR_CACHE[key] = PaddleOCR(
+                lang=paddle_lang,
+                engine="paddle_static",
+                enable_hpi=False,
+                enable_mkldnn=False,
+            )
     return _PADDLE_OCR_CACHE[key]
 
 
@@ -1671,8 +1682,6 @@ def main() -> None:
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
-    # PaddleOCR 需要禁用 oneDNN，见 _get_paddle_ocr
-    os.environ["FLAGS_use_mkldnn"] = "0"
     # 统一工作目录到项目目录：YOLOE 的 mobileclip_blt.ts 与模型权重按相对路径查找
     try:
         os.chdir(os.path.dirname(os.path.abspath(__file__)))
