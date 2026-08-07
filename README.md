@@ -51,7 +51,7 @@ skills/vision-perceive/    多轮识图闭环 skill
 tests/                     离线单元测试 + 真机冒烟测试
 docs/                      架构说明 / 部署手册 / 开发记录
 check.ps1                  环境自检
-install*.ps1 / register-mcp.ps1   安装与注册脚本
+setup.ps1 / install-extra.ps1 / register-mcp.ps1 / install-skill.ps1   安装与注册脚本
 LICENSE / CHANGELOG.md / CONTRIBUTING.md / requirements.txt
 ```
 
@@ -61,29 +61,44 @@ LICENSE / CHANGELOG.md / CONTRIBUTING.md / requirements.txt
 - [Ollama](https://ollama.com) 已安装并启动，视觉模型：`ollama pull qwen3-vl:8b`
 - 可选：`python -m pip install -r requirements.txt`（Pillow / ultralytics / numpy）
 
-## 快速开始
+## 安装（两种方式，任选其一）
 
-### 1. 自检
+> 安装完成后**重启 Codex** 即可使用。下方"工具/功能/排障"等章节均为参考材料，**安装阶段不必通读**。
+
+### 方式一：一键安装（推荐）
 
 ```powershell
+# 基础安装（描述 / 检测 / 分割 / OCR 兜底）
+powershell -ExecutionPolicy Bypass -File setup.ps1
+
+# 完整安装（+ PaddleOCR 场景文字 / YOLOE 零样本，需联网，体积较大）
+powershell -ExecutionPolicy Bypass -File setup.ps1 -Extras
+```
+
+`setup.ps1` = 环境检查 +（可选依赖）+ 注册 MCP + 安装 skill 的整合脚本，可重复执行（幂等）。
+
+### 方式二：分步安装（想看清每一步）
+
+```powershell
+# 0. 环境准备（一次性）
+#    安装 Python 3.9+（https://www.python.org/downloads/）
+#    安装并启动 Ollama（https://ollama.com）
+ollama pull qwen3-vl:8b
+
+# 1. 自检环境
 powershell -ExecutionPolicy Bypass -File check.ps1
-```
 
-### 2. 注册 MCP（不会动你已有的 DeepSeek 配置）
+# 2.（可选）安装 PaddleOCR / CLIP（不装则 OCR 自动回退 Windows OCR）
+powershell -ExecutionPolicy Bypass -File install-extra.ps1
 
-```powershell
+# 3. 注册 MCP（只追加 local_vision，不会动你已有的 DeepSeek 配置）
 powershell -ExecutionPolicy Bypass -File register-mcp.ps1
-```
 
-### 3. 安装 skill
-
-```powershell
+# 4. 安装识图 skill
 powershell -ExecutionPolicy Bypass -File install-skill.ps1
+
+# 5. 重启 Codex，然后说：分析这张图 C:/xxx/photo.png
 ```
-
-### 4. 重启 Codex
-
-重启后直接说"分析这张图 C:/xxx/photo.png"，主模型会自动调用本地视觉工具完成多轮识图。
 
 ## 工具
 

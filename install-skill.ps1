@@ -1,21 +1,25 @@
-﻿# 一键安装 vision-perceive skill 到 ~/.codex/skills
+﻿# 安装/更新 vision-perceive skill 到 ~/.codex/skills
 # 用法：powershell -ExecutionPolicy Bypass -File install-skill.ps1
+# 可选：-SkillDest <路径>（自定义/测试目标目录）
+param(
+    [string]$SkillDest = ""
+)
 $ErrorActionPreference = "Stop"
 
-$src = "C:/Users/Administrator/Documents/Codex/2026-08-05/pytorch-vision-https-github-com-pytorch/outputs/vision-mcp-local/skills/vision-perceive"
-$dest = Join-Path $env:USERPROFILE ".codex\skills\vision-perceive"
-
-if (-not (Test-Path -LiteralPath "$src\SKILL.md")) {
-    Write-Error "Cannot find skill source: $src"
+$src = Join-Path $PSScriptRoot "skills\vision-perceive"
+if ($SkillDest -eq "") {
+    $SkillDest = Join-Path $env:USERPROFILE ".codex\skills\vision-perceive"
 }
-if (Test-Path -LiteralPath $dest) {
-    Write-Host "Updating existing vision-perceive skill at $dest ..."
-    Copy-Item -Path (Join-Path $src '*') -Destination $dest -Recurse -Force
-    Write-Host "Skill updated."
+
+if (-not (Test-Path -LiteralPath (Join-Path $src "SKILL.md"))) {
+    Write-Error "找不到 skill 源：$src"
+}
+if (Test-Path -LiteralPath $SkillDest) {
+    Write-Host "更新 skill → $SkillDest"
+    Copy-Item -Path (Join-Path $src '*') -Destination $SkillDest -Recurse -Force
 } else {
-    Copy-Item -LiteralPath $src -Destination $dest -Recurse
-    Write-Host "Installed vision-perceive skill to $dest"
+    New-Item -ItemType Directory -Force (Split-Path $SkillDest) | Out-Null
+    Copy-Item -LiteralPath $src -Destination $SkillDest -Recurse
+    Write-Host "已安装 skill → $SkillDest"
 }
-
-Write-Host ""
-Write-Host "Next: restart Codex. The skill will be available from the next conversation turn."
+Write-Host "完成。重启 Codex 后生效。"
