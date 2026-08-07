@@ -289,6 +289,19 @@ class TestLocalVision(unittest.TestCase):
         self.assertFalse(r["isError"])
         self.assertIn("qwen3-vl:8b", r["content"][0]["text"])
 
+    def test_ollama_host_bare_address(self):
+        # OLLAMA_HOST 写成裸地址（无 http://）时应自动补全协议，而不是报 "unknown url type"
+        env = dict(self.env)
+        env["OLLAMA_HOST"] = f"127.0.0.1:{self.port}"
+        c = McpClient(env)
+        try:
+            c.init()
+            r = self.result(c.call("list_local_models", {}))
+            self.assertFalse(r["isError"], r)
+            self.assertIn("qwen3-vl:8b", r["content"][0]["text"])
+        finally:
+            c.close()
+
     def test_crop_and_scale(self):
         out = os.path.join(self.tmp.name, "crop.png")
         r = self.result(

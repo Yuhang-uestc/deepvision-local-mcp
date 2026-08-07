@@ -32,7 +32,7 @@ Local Vision MCP Server v2
   - detect_objects / detect_by_text：需要 ultralytics
 
 环境变量：
-  OLLAMA_HOST           Ollama 地址，默认 http://localhost:11434
+  OLLAMA_HOST           Ollama 地址，默认 http://localhost:11434；可写裸主机/端口（如 0.0.0.0、127.0.0.1:11434），自动补全
   OLLAMA_VISION_MODEL   视觉模型名，默认 qwen3-vl:8b
   LOCAL_VISION_MAX_MB   单张图片大小上限(MB)，默认 20
   LOCAL_VISION_CACHE    结果缓存开关，默认 1（开启）
@@ -64,7 +64,27 @@ import zipfile
 SERVER_NAME = "local-vision"
 SERVER_VERSION = "2.2.0"
 
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+
+def _normalize_ollama_host(host: str) -> str:
+    """把 OLLAMA_HOST 归一化为完整 URL：自动补 http:// 与默认端口 11434。
+
+    用户可能写成裸地址（0.0.0.0、127.0.0.1、localhost:11434 等），
+    缺协议或端口会导致 urllib 报 "unknown url type" 这类难懂错误。
+    """
+    host = (host or "").strip().rstrip("/")
+    if not host:
+        return "http://localhost:11434"
+    if host.startswith("0.0.0.0"):
+        # 0.0.0.0 是 Ollama 服务端监听地址，客户端连接应走本机回环
+        host = "127.0.0.1" + host[len("0.0.0.0"):]
+    if "://" not in host:
+        host = "http://" + host
+    if ":" not in host.split("/")[-1]:
+        host += ":11434"
+    return host
+
+
+OLLAMA_HOST = _normalize_ollama_host(os.environ.get("OLLAMA_HOST", ""))
 VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "qwen3-vl:8b")
 VISION_MODEL_QUICK = os.environ.get("VISION_MODEL_QUICK", "qwen3-vl:4b")
 MAX_IMAGE_BYTES = int(os.environ.get("LOCAL_VISION_MAX_MB", "20")) * 1024 * 1024

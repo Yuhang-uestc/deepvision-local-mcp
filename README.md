@@ -217,7 +217,7 @@ python tests\test_server.py
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama 服务地址 |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama 服务地址；可写裸主机/端口（如 `0.0.0.0`、`127.0.0.1:11434`），自动补全协议与端口 |
 | `OLLAMA_VISION_MODEL` | `qwen3-vl:8b` | 默认视觉模型 |
 | `VISION_MODEL_QUICK` | `qwen3-vl:4b` | 快速模式模型（未安装自动回退 8B） |
 | `LOCAL_VISION_MAX_MB` | `20` | 单张图片大小上限（MB） |

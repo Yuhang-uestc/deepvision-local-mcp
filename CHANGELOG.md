@@ -10,6 +10,7 @@
 - PaddleOCR 初始化加锁串行化，避免并发首次初始化互相踩 `~/.paddlex` 缓存锁（Windows 上表现为 Permission denied）
 - 输入校验：主要看图工具拒绝相对路径，并按文件真实内容（magic-byte）校验格式，错误更明确
 - 可选大图缩放：`LOCAL_VISION_MAX_DIMENSION`（默认关闭），超长边大图发送前自动等比缩小，防 detailed 卡死
+- `OLLAMA_HOST` 归一化：允许写裸主机/端口（如 `0.0.0.0`、`127.0.0.1:11434`），自动补全 `http://` 与默认端口，修复 "unknown url type" 报错
 
 ### 文档
 - README 新增"健壮性与安全"章节、环境变量表补 5 个新变量
