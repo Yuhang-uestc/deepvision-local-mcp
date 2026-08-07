@@ -22,6 +22,10 @@ CANNED = "模拟视觉模型输出：画面主体是一个蓝色方块，右上�
 
 
 class MockHandler(BaseHTTPRequestHandler):
+    # 类级计数器：用于验证缓存命中与重试行为
+    generate_calls = 0
+    fail_first_generate = 0
+
     def log_message(self, *args):
         pass
 
@@ -41,6 +45,11 @@ class MockHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == "/api/generate":
+            MockHandler.generate_calls += 1
+            if MockHandler.fail_first_generate > 0:
+                MockHandler.fail_first_generate -= 1
+                self._send({"error": "internal error"}, 500)
+                return
             n = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(n) if n else b""
             try:
@@ -140,6 +149,7 @@ class TestLocalVision(unittest.TestCase):
         cls.env = os.environ.copy()
         cls.env["OLLAMA_HOST"] = f"http://127.0.0.1:{cls.port}"
         cls.env["PYTHONIOENCODING"] = "utf-8"
+        cls.env["LOCAL_VISION_RETRY_BASE"] = "0.1"  # 测试里重试退避不等待
         cls.client = McpClient(cls.env)
         cls.client.init()
         cls.test_img = make_image(os.path.join(cls.tmp.name, "test.png"))
@@ -168,6 +178,7 @@ class TestLocalVision(unittest.TestCase):
             "crop_image",
             "draw_bounding_box",
             "list_local_models",
+            "vision_status",
         ):
             self.assertIn(need, names)
 
@@ -175,6 +186,42 @@ class TestLocalVision(unittest.TestCase):
         r = self.result(self.client.call("analyze_image", {"file_path": self.test_img}))
         self.assertFalse(r["isError"])
         self.assertIn("模拟视觉模型", r["content"][0]["text"])
+        self.assertTrue(r["content"][0]["text"].startswith("[安全提示]"))
+
+    def test_analyze_cache_hit(self):
+        # 相同图片 + 相同 prompt 第二次调用应命中缓存，不再请求 Ollama
+        prompt = "cache-hit-test"
+        before = MockHandler.generate_calls
+        for _ in range(2):
+            r = self.result(
+                self.client.call("analyze_image", {"file_path": self.test_img, "prompt": prompt})
+            )
+            self.assertFalse(r["isError"])
+        self.assertLessEqual(MockHandler.generate_calls - before, 1)
+
+    def test_ollama_retry_transient_500(self):
+        # 首次请求返回 500，应自动重试成功（不报错且请求数 >= 2）
+        MockHandler.fail_first_generate = 1
+        try:
+            before = MockHandler.generate_calls
+            r = self.result(
+                self.client.call(
+                    "analyze_image", {"file_path": self.test_img, "prompt": "retry-transient-test"}
+                )
+            )
+            self.assertFalse(r["isError"], r)
+            self.assertGreaterEqual(MockHandler.generate_calls - before, 2)
+        finally:
+            MockHandler.fail_first_generate = 0
+
+    def test_vision_status(self):
+        r = self.result(self.client.call("vision_status", {}))
+        self.assertFalse(r["isError"])
+        text = r["content"][0]["text"]
+        self.assertIn("服务器版本", text)
+        self.assertIn("qwen3-vl:8b", text)
+        self.assertIn("Ollama", text)
+        self.assertIn("缓存", text)
 
     def test_analyze_multi_image_mock(self):
         r = self.result(

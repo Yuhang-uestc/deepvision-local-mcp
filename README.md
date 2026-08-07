@@ -14,6 +14,7 @@
 - 🔧 **专业工具分工**：视觉模型描述、PaddleOCR 场景文字识别（含坐标框）、YOLO 检测/分割、零样本检测、颜色/模板定位、裁切放大，各管一段
 - 🔄 **多轮识图闭环**：概览 → 聚焦 → 文字 → 定位 → 放大 → 交叉校验 → 综合报告，过滤幻觉
 - ⚡ **快慢双模式**：顺手附图走 quick（默认 4B、秒级返回），认真分析走 detailed（8B）
+- 🧠 **健壮性**：相同图片+参数自动缓存（秒回）、Ollama 瞬时故障自动重试、图片内容按"不可信数据"处理（防提示注入）、`vision_status` 一键排障
 - 🛡️ **部署友好**：server 零依赖起步；PaddleOCR / YOLOE 等重型能力可选、自动降级；下载支持断点续传与完整性校验
 - 📦 **开箱脚本**：环境自检、MCP 注册、skill 安装、可选依赖一键装
 
@@ -32,6 +33,7 @@ server.py（Python，基础零依赖）
         │
         ├─ analyze_image ──► 本地 Ollama（qwen3-vl:8b 等）
         ├─ ocr_extract ────► PaddleOCR（回退 Windows OCR）
+        ├─ vision_status ──► 配置 / 依赖 / Ollama 健康检查
         ├─ detect_objects ─► YOLO（COCO 80 类）
         ├─ detect_by_text ─► YOLOE / YOLO-World（零样本）
         ├─ cv_locate ──────► OpenCV 颜色/模板匹配
@@ -193,13 +195,23 @@ powershell -ExecutionPolicy Bypass -File install-extra.ps1
 python -c "from ultralytics import YOLO; YOLO('yoloe-v8s-seg.pt')"
 ```
 
+## 健壮性与安全（v2.2）
+
+- **结果缓存**：`analyze_image` / `ocr_extract` 对"相同图片内容 + 相同参数"自动命中缓存（按内容哈希，文件被替换会自动失效），
+  第二次调用秒回，不用重复等本地模型推理。可用 `LOCAL_VISION_CACHE=0` 关闭。
+- **自动重试**：Ollama 瞬时故障（HTTP 429/5xx、网络抖动）自动指数退避重试（默认 2 次），模型不存在（404）不重试，直接给出安装提示。
+- **不可信数据防护**：图片可能包含诱导性文字（如"忽略之前的指令"），因此 `analyze_image` / `ocr_extract` 的返回都带
+  `[安全提示]` 前缀，提醒主模型把图片内容当数据、不当指令。
+- **一键排障**：`vision_status` 输出版本、Ollama 连通性、两个视觉模型是否已安装、可选依赖状态、缓存/重试配置，
+  遇到"连不上 / 没模型 / 缺依赖"先调它。
+
 ## 测试
 
 ```powershell
 python tests\test_server.py
 ```
 
-离线测试用 mock Ollama 验证协议与全部工具（analyze / crop / draw / cv_locate / 错误路径 / 输出目录限制）。
+离线测试用 mock Ollama 验证协议与全部工具（analyze / 缓存命中 / 重试 / crop / draw / cv_locate / 错误路径 / 输出目录限制）。
 
 ## 开源与许可
 
@@ -216,6 +228,11 @@ python tests\test_server.py
 | `OLLAMA_VISION_MODEL` | `qwen3-vl:8b` | 默认视觉模型 |
 | `VISION_MODEL_QUICK` | `qwen3-vl:4b` | 快速模式模型（未安装自动回退 8B） |
 | `LOCAL_VISION_MAX_MB` | `20` | 单张图片大小上限（MB） |
+| `LOCAL_VISION_CACHE` | `1` | 结果缓存开关（相同图片+参数秒回），`0` 关闭 |
+| `LOCAL_VISION_CACHE_TTL` | `1800` | 缓存有效期（秒） |
+| `LOCAL_VISION_CACHE_MAX` | `64` | 缓存最大条数（超出淘汰最旧） |
+| `LOCAL_VISION_RETRIES` | `2` | Ollama 瞬时故障（429/5xx/网络抖动）重试次数 |
+| `LOCAL_VISION_RETRY_BASE` | `2.0` | 重试退避基数（秒，第 n 次等待 `基数×2^(n-1)`） |
 | `DETECTION_MODEL` | `yolov8n.pt` | 默认 COCO 检测模型 |
 | `SEGMENTATION_MODEL` | `yolov8n-seg.pt` | 默认分割模型 |
 | `DETECTION_TEXT_MODEL` | `yoloe-v8s-seg.pt` | 默认零样本检测模型 |
@@ -274,6 +291,24 @@ server.py 不依赖 DeepSeek，只认 MCP 协议。只要你的客户端支持 M
 | Cursor | 设置 → MCP → 添加（写入 `~/.cursor/mcp.json`）或项目 `.cursor/mcp.json` | 无原生 skills，可用 rules 引用多轮流程 |
 | Trae | 设置 → MCP → 创建 → 手动配置（stdin 类型） | 同上 |
 | opencode / Windsurf / Cline / JetBrains / Cherry Studio 等 | 各自 MCP 设置界面，填入同一段配置 | MCP 生态通用 |
+
+#### 换客户端后的常见坑
+
+**粘贴的图片去哪了？** 各客户端把粘贴图片落盘的位置不同，`analyze_image` 需要的是图片路径：
+
+| 客户端 | 粘贴图片落盘位置 |
+|---|---|
+| Codex | `~/.codex/attachments/<会话>/image-*.png` |
+| Claude Code | `~/.claude/image-cache/<uuid>/N.png`（Alt+V 粘贴） |
+| opencode | `~/.local/share/opencode/opencode.db`（SQLite，需 Node ≥22.5 提取） |
+| Cursor / Trae / 其他桌面端 | 各自的附件/上传目录（不通用，优先把图片文件直接拖进对话框拿路径） |
+
+**Windows 剪贴板的坑**：在资源管理器里对图片"复制"（Ctrl+C）复制的是**文件路径列表**而不是图片内容，
+在 CLI 客户端里直接粘贴不一定生效；把图片文件**拖进对话框**（插入路径）最稳。
+
+**宿主超时建议**：本地视觉推理比纯文本慢（4B 约 10~30s、8B 约 20~60s），部分宿主默认 MCP 超时只有 30~60 秒，
+首次调用或大图时可能被宿主掐断。建议把该 MCP 服务的超时调到 120000ms 以上（Codex 对应 `startup_timeout_sec`，
+其他客户端在 MCP 配置里找 timeout/timeoutMs 字段）。
 
 ### 3. 换视觉模型（眼）
 
