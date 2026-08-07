@@ -1,7 +1,8 @@
 # Local Vision MCP（本地识图）
 
 给纯文本主模型（DeepSeek 等）补上本地"看图"能力的 MCP server + 多轮识图闭环 skill。
-**图片只在本机处理**：读取本地图片 → 本地 Ollama 视觉模型 / YOLO / PaddleOCR / OpenCV → 返回文字与坐标，全程不出机器。
+**图片文件与视觉识别全程在本机完成**：读取本地图片 → 本地 Ollama 视觉模型 / YOLO / PaddleOCR / OpenCV → 返回文字与坐标，原始图片不直接上传。
+识别出的文字会进入主模型对话——若主模型为云端 API（如 DeepSeek），该文字内容会上云；需要完全隔离可搭配本地主模型。
 
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
@@ -10,7 +11,7 @@
 
 ## 特性
 
-- 🖼️ **本地看图**：图片不出机器，隐私安全；DeepSeek 等纯文本模型也能"看图"
+- 🖼️ **本地看图**：图片文件与视觉识别全程在本机完成，不直接上传原图；识别出的文字随对话交给主模型（云端主模型可见）
 - 🔧 **专业工具分工**：视觉模型描述、PaddleOCR 场景文字识别（含坐标框）、YOLO 检测/分割、零样本检测、颜色/模板定位、裁切放大，各管一段
 - 🔄 **多轮识图闭环**：概览 → 聚焦 → 文字 → 定位 → 放大 → 交叉校验 → 综合报告，过滤幻觉
 - ⚡ **快慢双模式**：顺手附图走 quick（默认 4B、秒级返回），认真分析走 detailed（8B）
@@ -20,7 +21,7 @@
 
 ## 效果演示
 
-同一张看板截图的**真实工具输出**：`cv_locate` 颜色定位（绿/红卡片色条）+ PaddleOCR 文字识别（含坐标）+ 本地 qwen3-vl 综合分析，图片全程在本机处理：
+同一张看板截图的**真实工具输出**：`cv_locate` 颜色定位（绿/红卡片色条）+ PaddleOCR 文字识别（含坐标）+ 本地 qwen3-vl 综合分析（图片文件在本机处理）：
 
 ![真实工具输出演示](examples/demo_annotated.png)
 
@@ -33,7 +34,7 @@ DeepSeek 等纯文本模型没有视觉能力，但通过 MCP 工具可以获得
 
 ![架构总览](examples/architecture.png)
 
-一句话：**主模型负责"想"，本地引擎负责"看"，MCP 是桥，skill 是流程**；图片全程只在本机处理。
+一句话：**主模型负责"想"，本地引擎负责"看"，MCP 是桥，skill 是流程**；图片文件与视觉识别在本机完成。
 
 数据流：纯文本主模型（Codex / Claude Code / opencode / DeepSeek 等）→ `server.py`（MCP stdio，11 个工具）→
 本地引擎（Ollama 视觉模型 / PaddleOCR / YOLO / OpenCV / Pillow）→ 返回文字与坐标 → 主模型交叉校验并输出最终报告。
@@ -217,7 +218,7 @@ python tests\test_server.py
 - 本项目代码：MIT License。
 - **模型权重不随仓库分发**：yolov8n.pt / yoloe-*.pt 等为 AGPL-3.0 许可（Ultralytics），首次调用自动下载，用户自担许可责任。
 - **绝不提交**：`config.toml`（含 DeepSeek API Key）、`*.bak-*`、`.cache/`、真人照片测试图（`.gitignore` 已屏蔽）。
-- 图片仅发往本机 Ollama（默认 `http://localhost:11434`），不上传任何云端。
+- 图片文件仅在本机处理（本地 Ollama / PaddleOCR / YOLO / OpenCV），不直接上传原图；对话内容（含识别文字）按你所使用的主模型策略发送。
 
 ## 配置项（环境变量）
 
@@ -248,6 +249,7 @@ python tests\test_server.py
 ## 已知限制
 
 - **qwen3-vl:8b 定位能力弱**：能验证框、描述场景、读文字，但直接输出精确坐标不可靠——因此定位交给 YOLO/OpenCV。
+- **识别文字随对话上云**：图片文件不出本机，但 OCR / 描述等识别文字会进入主模型对话；若主模型为云端 API（如 DeepSeek），这些文字会发送到其服务器。需要完全隔离时可搭配本地主模型（如 Ollama 中的 qwen3 / deepseek-r1）。
 - **qwen3-vl 设置 num_predict（max_tokens）会返回空输出**（实测 Ollama 行为），所以限长靠精简 prompt 而不是参数。
 - **多图对比（file_paths）在 qwen3-vl:8b 下实测无效**：Ollama 只把第一张图传给模型，第二张会被忽略；需要对比时改为分别分析单张图，由主模型综合。
 - **OCR 有误读率**：系统 OCR 偶发识别错误，重要文字建议与视觉模型交叉核对；艺术字/手写效果差。

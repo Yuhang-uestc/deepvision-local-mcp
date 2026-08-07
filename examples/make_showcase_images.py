@@ -249,7 +249,7 @@ def make_demo_annotated():
             y += 24
         if y > H + off_y - 46:
             break
-    d.text((px, H + off_y - 24), "图片全程在本机处理 · 未上传任何云端", font=font(FONT_REG, 14), fill="#64748b")
+    d.text((px, H + off_y - 24), "图片文件在本机处理 · 原图不直接上传", font=font(FONT_REG, 14), fill="#64748b")
 
     # 底部：综合分析块（真实模型输出）
     ay0 = head_h + H + 24
@@ -286,7 +286,7 @@ def make_social_preview():
     d.text((70, 120), "给 DeepSeek 装上", font=font(FONT_BOLD, 84), fill="#ffffff")
     d.text((70, 232), "本地眼睛", font=font(FONT_BOLD, 84), fill="#ffffff")
     d.text((70, 344), "OCR · 检测 · 分割 · 零样本 · 定位 · 裁切放大", font=font(FONT_REG, 38), fill="#cbd5e1")
-    d.text((70, 400), "图片全程不出本机，100% 本地免费", font=font(FONT_REG, 38), fill="#7dd3fc")
+    d.text((70, 400), "图片文件不出本机 · 视觉识别全本地", font=font(FONT_REG, 38), fill="#7dd3fc")
     chips = ["11 个工具", "21 项离线测试", "相同图片缓存秒回", "多轮闭环防幻觉"]
     cx, cy = 70, 492
     for chip in chips:
@@ -340,7 +340,7 @@ def make_architecture():
     d.rounded_rectangle([50, 590, AW - 50, 634], radius=12, fill="#0f172a", outline="#334155", width=1)
     d.text(
         (70, 604),
-        "图片全程只在本机处理：主模型负责想，本地引擎负责看，MCP 是桥，skill 是流程。",
+        "图片文件与视觉识别在本机完成：主模型负责想（云端或本地），本地引擎负责看，MCP 是桥。",
         font=f_s,
         fill="#94a3b8",
     )
