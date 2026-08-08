@@ -2,6 +2,8 @@
 
 [English](README.en.md) | 简体中文
 
+> **Give pure-text LLMs (DeepSeek, Claude, Codex, etc.) local vision.** Image files and vision processing stay on your machine — a local Ollama vision model, PaddleOCR text recognition, YOLO detection/segmentation, and OpenCV locating return text and coordinates. Raw images are never uploaded directly. Full English docs: [README.en.md](README.en.md)
+
 给纯文本主模型（DeepSeek 等）补上本地"看图"能力的 MCP server + 多轮识图闭环 skill。
 **图片文件与视觉识别全程在本机完成**：读取本地图片 → 本地 Ollama 视觉模型 / YOLO / PaddleOCR / OpenCV → 返回文字与坐标，原始图片不直接上传。
 识别出的文字会进入主模型对话——若主模型为云端 API（如 DeepSeek），该文字内容会上云；需要完全隔离可搭配本地主模型。
