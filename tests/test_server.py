@@ -477,6 +477,30 @@ class TestZeroShotCnHelpers(unittest.TestCase):
         self.assertEqual(out, ["car", "dog"])
         self.assertTrue(changed)
 
+    def test_auto_conf_retry(self):
+        s = self.server
+        calls = []
+
+        def pred(c):
+            calls.append(c)
+            return (None, f"empty {c}") if c >= 0.2 else ("obj", "found at")
+
+        r, msg = s._auto_conf_retry(pred, 0.35, False)
+        self.assertEqual(calls, [0.35, 0.25, 0.15])
+        self.assertEqual(r, "obj")
+        self.assertIn("自动降到 0.15", msg)
+
+    def test_auto_conf_retry_explicit_skips(self):
+        s = self.server
+        calls = []
+
+        def pred(c):
+            calls.append(c)
+            return (None, "empty")
+
+        r, msg = s._auto_conf_retry(pred, 0.35, True)
+        self.assertEqual(calls, [0.35])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

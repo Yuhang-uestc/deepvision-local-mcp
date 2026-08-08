@@ -237,6 +237,7 @@ python tests\test_server.py
 | `LOCAL_VISION_RETRY_BASE` | `2.0` | 重试退避基数（秒，第 n 次等待 `基数×2^(n-1)`） |
 | `LOCAL_VISION_MAX_DIMENSION` | `0`（关闭） | 可选。`analyze_image` 发送给 Ollama 前的最大边长（px），超限大图自动等比缩小，防 detailed 卡死；全局细节会略降，要精度请用 `crop_image` 局部裁切 |
 | `LOCAL_VISION_ZS_TRANSLATE` | `1` | `detect_by_text` 中文描述自动本地翻译开关（词典直译 + Ollama 兜底），`0` 关闭 |
+| `LOCAL_VISION_CONF_FLOOR` | `0.15` | 检测/分割自动降置信度重试的下限；结果为空且未显式指定 `min_confidence` 时自动降档重试，`0` 关闭 |
 | `DETECTION_MODEL` | `yolov8n.pt` | 默认 COCO 检测模型 |
 | `SEGMENTATION_MODEL` | `yolov8n-seg.pt` | 默认分割模型 |
 | `DETECTION_TEXT_MODEL` | `yoloe-v8s-seg.pt` | 默认零样本检测模型 |

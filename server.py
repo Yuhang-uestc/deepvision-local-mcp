@@ -44,6 +44,7 @@ Local Vision MCP Server v2
                           开启后超限大图自动等比缩小，防 detailed 卡死（全局细节会略降，要精度请走局部裁切）
   LOCAL_VISION_ZS_TRANSLATE 中文零样本自动翻译开关，默认 1（开启）：常见物体走词典直译，
                           其余走本地 Ollama 翻译成英文再检测；设为 0 关闭
+  LOCAL_VISION_CONF_FLOOR  检测/分割自动降置信度重试的下限，默认 0.15；设为 0 关闭自动重试
   DETECTION_MODEL       默认 COCO 检测模型，默认 yolov8n.pt
   DETECTION_TEXT_MODEL   默认零样本检测模型，默认 yoloe-v8s-seg.pt
   VISION_OUTPUT_DIR     可选。设置后所有生成文件只能写入该目录
@@ -101,6 +102,8 @@ LOCAL_VISION_ZS_TRANSLATE = os.environ.get("LOCAL_VISION_ZS_TRANSLATE", "1").str
     "true",
     "yes",
 )
+_AUTO_CONF_FLOOR = float(os.environ.get("LOCAL_VISION_CONF_FLOOR", "0.15"))
+_AUTO_CONF_STEPS = (0.25, 0.15)
 
 DEFAULT_PROMPT = "请详细描述这张图片的内容，包括画面主体、布局和图中出现的所有文字。"
 QUICK_PROMPT = "请用简洁的中文概括这张图片的主要内容，包括类型、主体和要点，不超过100字。"
@@ -1608,6 +1611,34 @@ def _resolve_classes(model, classes):
     return resolved or None
 
 
+def _class_name(names, cls_id):
+    names = names or {}
+    if isinstance(names, list):
+        return names[cls_id] if 0 <= cls_id < len(names) else str(cls_id)
+    return names.get(cls_id, str(cls_id))
+
+
+def _auto_conf_retry(predict_fn, conf, explicit):
+    """检测/分割结果为空且用户未显式指定置信度时，自动降档重试，减少漏检。
+
+    predict_fn(conf) -> (r, msg)，r 为 None 表示未检出目标。
+    返回 (r, msg)；自动降档成功时 msg 会附带提示。
+    """
+    if explicit or _AUTO_CONF_FLOOR <= 0 or conf <= _AUTO_CONF_FLOOR:
+        return predict_fn(conf)
+    r, msg = predict_fn(conf)
+    if r is not None:
+        return r, msg
+    for step in _AUTO_CONF_STEPS:
+        if step >= conf:
+            continue
+        r2, msg2 = predict_fn(step)
+        if r2 is not None:
+            msg2 += f"\n[提示] 置信度 {conf} 未检出目标，已自动降到 {step} 重试（LOCAL_VISION_CONF_FLOOR={_AUTO_CONF_FLOOR}）。"
+            return r2, msg2
+    return r, msg
+
+
 def _format_detection_results(results):
     r = results[0]
     img_h, img_w = r.orig_shape
@@ -1618,11 +1649,7 @@ def _format_detection_results(results):
         x1, y1, x2, y2 = [round(float(v), 1) for v in box.xyxy[0].tolist()]
         conf_v = round(float(box.conf[0]), 3)
         cls_id = int(box.cls[0])
-        names = r.names or {}
-        if isinstance(names, list):
-            name = names[cls_id] if 0 <= cls_id < len(names) else str(cls_id)
-        else:
-            name = names.get(cls_id, str(cls_id))
+        name = _class_name(r.names, cls_id)
         lines.append(
             f"- {name} ({conf_v})：像素框 [{x1},{y1},{x2},{y2}]，"
             f"归一化 [{x1 / img_w:.3f},{y1 / img_h:.3f},{x2 / img_w:.3f},{y2 / img_h:.3f}]"
@@ -1745,20 +1772,25 @@ def call_detect_objects(args: dict) -> dict:
         return err_result(f"加载检测模型失败：{e}。首次使用需要联网下载权重（{model_name}）。")
 
     try:
+        conf_explicit = "min_confidence" in args
         if classes:
             try:
                 classes = _resolve_classes(model, classes)
             except ValueError as e:
                 return err_result(str(e))
-        with contextlib.redirect_stdout(sys.stderr):
-            results = model.predict(file_path, conf=conf, classes=classes, verbose=False)
-        r, msg = _format_detection_results(results)
+
+        def _predict(c):
+            with contextlib.redirect_stdout(sys.stderr):
+                res = model.predict(file_path, conf=c, classes=classes, verbose=False)
+            return _format_detection_results(res)
+
+        r, msg = _auto_conf_retry(_predict, conf, conf_explicit)
         save_path = str(args.get("save_path", "")).strip()
         if save_path:
             try:
                 out = _safe_output_path(file_path, save_path)
                 with contextlib.redirect_stdout(sys.stderr):
-                    _save_plot(results, out)
+                    _save_plot([r], out)
                 msg += f"\n标注图已保存：{out}"
             except Exception as e:
                 msg += f"\n（保存标注图失败：{e}）"
@@ -1814,6 +1846,7 @@ def call_segment_objects(args: dict) -> dict:
         return err_result(f"加载分割模型失败：{e}。首次使用需要联网下载权重（{model_name}）。")
 
     try:
+        conf_explicit = "min_confidence" in args
         if classes:
             try:
                 classes = _resolve_classes(model, classes)
@@ -1822,20 +1855,35 @@ def call_segment_objects(args: dict) -> dict:
         with contextlib.redirect_stdout(sys.stderr):
             results = model.predict(file_path, conf=conf, classes=classes, verbose=False)
         r = results[0]
-        img_h, img_w = r.orig_shape
+        conf_retried = False
         if r.masks is None or len(r.masks) == 0:
             if r.boxes is not None and len(r.boxes) > 0:
                 return err_result(
                     f"模型 {model_name} 不是分割模型（只输出了边界框）。请使用带 -seg 的分割模型，如 yolov8n-seg.pt"
                 )
-            return ok_result(f"未分割到任何目标（置信度阈值 {conf}）。")
+            if not conf_explicit and _AUTO_CONF_FLOOR > 0 and conf > _AUTO_CONF_FLOOR:
+                for step in _AUTO_CONF_STEPS:
+                    if step >= conf:
+                        continue
+                    with contextlib.redirect_stdout(sys.stderr):
+                        r2 = model.predict(file_path, conf=step, classes=classes, verbose=False)[0]
+                    if r2.masks is not None and len(r2.masks) > 0:
+                        r = r2
+                        conf = step
+                        conf_retried = True
+                        break
+                if not conf_retried:
+                    return ok_result(f"未分割到任何目标（置信度阈值 {conf}）。")
+            else:
+                return ok_result(f"未分割到任何目标（置信度阈值 {conf}）。")
+        img_h, img_w = r.orig_shape
         lines = []
         count_by_class = {}
         for i, box in enumerate(r.boxes):
             x1, y1, x2, y2 = [round(float(v), 1) for v in box.xyxy[0].tolist()]
             conf_v = round(float(box.conf[0]), 3)
             cls_id = int(box.cls[0])
-            name = (r.names or {}).get(cls_id, str(cls_id))
+            name = _class_name(r.names, cls_id)
             count_by_class[name] = count_by_class.get(name, 0) + 1
             mask_area = int(r.masks.data[i].sum().item())
             area_pct = mask_area / (img_w * img_h) * 100
@@ -1848,6 +1896,8 @@ def call_segment_objects(args: dict) -> dict:
             f"分割到 {len(lines)} 个实例（图片 {img_w}x{img_h}，类别统计：{summary}）：\n"
             + "\n".join(lines)
         )
+        if conf_retried:
+            msg += f"\n[提示] 默认置信度未检出目标，已自动降档重试（LOCAL_VISION_CONF_FLOOR={_AUTO_CONF_FLOOR}）。"
         save_path = str(args.get("save_path", "")).strip()
         if save_path:
             try:
@@ -1942,10 +1992,16 @@ def call_detect_by_text(args: dict) -> dict:
                     f"当前进度 {size_now / 1024 / 1024:.0f}MB。请稍等片刻后重试本调用，"
                     f"重试时会自动继续并显示最新进度。{hint}"
                 )
+        conf_explicit = "min_confidence" in args
         with contextlib.redirect_stdout(sys.stderr):
             model.set_classes(texts)
-            results = model.predict(file_path, conf=conf, verbose=False)
-        r, msg = _format_detection_results(results)
+
+        def _predict(c):
+            with contextlib.redirect_stdout(sys.stderr):
+                res = model.predict(file_path, conf=c, verbose=False)
+            return _format_detection_results(res)
+
+        r, msg = _auto_conf_retry(_predict, conf, conf_explicit)
         if zs_translated:
             msg += "\n[提示] 中文描述已自动本地翻译为英文后检测（词典 + 本地 Ollama 翻译）。"
         save_path = str(args.get("save_path", "")).strip()
@@ -1953,7 +2009,7 @@ def call_detect_by_text(args: dict) -> dict:
             try:
                 out = _safe_output_path(file_path, save_path)
                 with contextlib.redirect_stdout(sys.stderr):
-                    _save_plot(results, out)
+                    _save_plot([r], out)
                 msg += f"\n标注图已保存：{out}"
             except Exception as e:
                 msg += f"\n（保存标注图失败：{e}）"

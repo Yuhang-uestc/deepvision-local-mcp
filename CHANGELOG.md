@@ -12,9 +12,11 @@
 - 可选大图缩放：`LOCAL_VISION_MAX_DIMENSION`（默认关闭），超长边大图发送前自动等比缩小，防 detailed 卡死
 - `OLLAMA_HOST` 归一化：允许写裸主机/端口（如 `0.0.0.0`、`127.0.0.1:11434`），自动补全 `http://` 与默认端口，修复 "unknown url type" 报错
 - 中文零样本自动本地翻译：`detect_by_text` 收到中文描述时，常见物体走词典直译、其余走本地 Ollama 翻译成英文再检测（`LOCAL_VISION_ZS_TRANSLATE=0` 关闭）
+- 检测/分割自动降置信度重试：结果为空且未显式指定 `min_confidence` 时，自动按 0.25→0.15 降档重试，减少漏检（`LOCAL_VISION_CONF_FLOOR=0` 关闭）
 
 ### 修复
 - `_format_detection_results` 兼容 `names` 为 list 的情况（YOLO-World `set_classes` 后触发），修复 `'list' object has no attribute 'get'` 崩溃
+- 分割工具 `_class_name` 统一处理 `names` 为 list/dict 两种形态，消除同类崩溃隐患
 
 ### 文档
 - README 新增"健壮性与安全"章节、环境变量表补 5 个新变量
