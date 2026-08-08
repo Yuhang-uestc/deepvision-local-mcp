@@ -213,7 +213,16 @@ python -c "from ultralytics import YOLO; YOLO('yoloe-v8s-seg.pt')"
 python tests\test_server.py
 ```
 
-离线测试用 mock Ollama 验证协议与全部工具，共 21 项（analyze / 缓存命中 / 瞬时错误重试 / 相对路径拒绝 / 伪格式拒绝 / 可选大图缩放 / crop / draw / cv_locate / 错误路径 / 输出目录限制）。
+离线测试用 mock Ollama 验证协议与全部工具，共 28 项（analyze / 缓存命中 / 瞬时错误重试 / 相对路径拒绝 / 伪格式拒绝 / 可选大图缩放 / crop / draw / cv_locate / 错误路径 / 输出目录限制 / 零样本翻译桥等）。
+
+另有**基准测试**（量化精度，合成图 + 标准答案，可复现）：
+
+```powershell
+python benchmarks\generate_cases.py
+python benchmarks\run_benchmark.py
+```
+
+覆盖 OCR（中/英/表格/小字）、颜色定位与计数、模板匹配、裁切、输入校验，报告输出到 `benchmarks\report\`。指标口径与自定义检测数据集格式见 `benchmarks\README.md`。
 
 ## 开源与许可
 
@@ -261,6 +270,7 @@ python tests\test_server.py
 - **OCR 坐标在 PowerShell 5.1 下为 0**：仅指 Windows 内置 OCR 兜底路径（WinRT 限制）；使用 PaddleOCR 引擎时坐标正常。安装 [PowerShell 7](https://github.com/PowerShell/PowerShell) 后兜底路径的坐标也可用。
 - **8B 模型速度**：每次识图约 20~60 秒，可换 4B 提速。
 - **模板匹配对纯色模板失效**：请裁取含纹理/边缘的区域作为模板。
+- **PaddleOCR 可能自动回退 Windows OCR**：`auto` 模式下若 PaddleOCR 初始化失败（最常见是进程对 `%USERPROFILE%\.paddlex` 没有写权限，例如沙盒 / 受限环境 / 部分杀软拦截），会自动回退系统 OCR，并在返回文本里注明"已回退 Windows OCR"——这不是故障，回退后仍可正常识别，只是精度略低、中文表格等场景更易误读。想强制使用 PaddleOCR 可显式传 `engine="paddle"`（初始化失败会直接报错，方便定位）；普通终端里运行一般不会触发回退。
 
 ## 兼容性（换工具 / 换模型 / 换平台）
 
