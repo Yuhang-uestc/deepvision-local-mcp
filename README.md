@@ -1,5 +1,7 @@
 # Local Vision MCP（本地识图）
 
+[English](README.en.md) | 简体中文
+
 给纯文本主模型（DeepSeek 等）补上本地"看图"能力的 MCP server + 多轮识图闭环 skill。
 **图片文件与视觉识别全程在本机完成**：读取本地图片 → 本地 Ollama 视觉模型 / YOLO / PaddleOCR / OpenCV → 返回文字与坐标，原始图片不直接上传。
 识别出的文字会进入主模型对话——若主模型为云端 API（如 DeepSeek），该文字内容会上云；需要完全隔离可搭配本地主模型。
@@ -50,6 +52,7 @@ docs/                      架构说明 / 部署手册 / 开发记录
 check.ps1                  环境自检
 setup.ps1 / install.ps1 / install-extra.ps1 / register-mcp.ps1 / install-skill.ps1   安装与注册脚本
 examples/                  合成示例图与展示图（demo_input / demo_annotated / social_preview / architecture）
+benchmarks/                 可复现基准测试（合成用例 + 指标报告，见「测试」一节）
 LICENSE / CHANGELOG.md / CONTRIBUTING.md / requirements.txt
 ```
 
