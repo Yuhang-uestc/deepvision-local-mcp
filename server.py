@@ -567,7 +567,7 @@ _IMAGE_MAGIC = (
 
 
 def _check_image_magic(file_path: str) -> str:
-    """按文件真实内容判断图片格式，扩展名与内容不符时给出明确报错。"""
+    """按文件真实内容判断图片格式（不依赖扩展名；扩展名仅供参考，不做强制校验）。"""
     with open(file_path, "rb") as f:
         head = f.read(12)
     for magic, name in _IMAGE_MAGIC:
@@ -907,9 +907,22 @@ def call_image_info(args: dict) -> dict:
             w, h = im.size
             fmt = im.format or "未知"
             mode = im.mode
+        ext = os.path.splitext(file_path)[1].lower()
+        expected_exts = {
+            "JPEG": {".jpg", ".jpeg"},
+            "PNG": {".png"},
+            "GIF": {".gif"},
+            "BMP": {".bmp"},
+            "TIFF": {".tif", ".tiff"},
+            "WEBP": {".webp"},
+        }.get(fmt)
+        ext_note = ""
+        if fmt != "未知" and ext and expected_exts and ext not in expected_exts:
+            ext_note = f"\n注意：文件扩展名为 {ext}，但实际内容是 {fmt}，已按内容处理。"
         return ok_result(
             f"图片信息：\n路径：{file_path}\n尺寸：{w} x {h}\n格式：{fmt}\n模式：{mode}\n"
-            f"大小：{size_bytes / 1024:.1f} KB\n（坐标使用像素，x∈[0,{w - 1}], y∈[0,{h - 1}]）"
+            f"大小：{size_bytes / 1024:.1f} KB{ext_note}\n"
+            f"（坐标使用像素，x∈[0,{w - 1}], y∈[0,{h - 1}]）"
         )
     except Exception as e:
         return err_result(f"读取图片信息失败：{e}")
