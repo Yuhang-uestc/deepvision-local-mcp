@@ -479,26 +479,51 @@ class TestZeroShotCnHelpers(unittest.TestCase):
 
     def test_auto_conf_retry(self):
         s = self.server
-        calls = []
+        old_floor, old_steps = s._AUTO_CONF_FLOOR, s._AUTO_CONF_STEPS
+        s._AUTO_CONF_FLOOR = 0.15
+        s._AUTO_CONF_STEPS = (0.25, 0.15)
+        try:
+            calls = []
 
-        def pred(c):
-            calls.append(c)
-            return (None, f"empty {c}") if c >= 0.2 else ("obj", "found at")
+            def pred(c):
+                calls.append(c)
+                return (None, f"empty {c}") if c >= 0.2 else ("obj", "found at")
 
-        r, msg = s._auto_conf_retry(pred, 0.35, False)
-        self.assertEqual(calls, [0.35, 0.25, 0.15])
-        self.assertEqual(r, "obj")
-        self.assertIn("自动降到 0.15", msg)
+            r, msg = s._auto_conf_retry(pred, 0.35, False)
+            self.assertEqual(calls, [0.35, 0.25, 0.15])
+            self.assertEqual(r, "obj")
+            self.assertIn("自动降到 0.15", msg)
+        finally:
+            s._AUTO_CONF_FLOOR, s._AUTO_CONF_STEPS = old_floor, old_steps
 
     def test_auto_conf_retry_explicit_skips(self):
         s = self.server
+        old_floor, old_steps = s._AUTO_CONF_FLOOR, s._AUTO_CONF_STEPS
+        s._AUTO_CONF_FLOOR = 0.15
+        s._AUTO_CONF_STEPS = (0.25, 0.15)
+        try:
+            calls = []
+
+            def pred(c):
+                calls.append(c)
+                return (None, "empty")
+
+            r, msg = s._auto_conf_retry(pred, 0.35, True)
+            self.assertEqual(calls, [0.35])
+        finally:
+            s._AUTO_CONF_FLOOR, s._AUTO_CONF_STEPS = old_floor, old_steps
+
+    def test_auto_conf_retry_default_off(self):
+        # 默认关闭：不显式开启时即使结果为空也不自动降档，保持稳定行为
+        s = self.server
+        s._AUTO_CONF_FLOOR = 0.0
         calls = []
 
         def pred(c):
             calls.append(c)
             return (None, "empty")
 
-        r, msg = s._auto_conf_retry(pred, 0.35, True)
+        r, msg = s._auto_conf_retry(pred, 0.35, False)
         self.assertEqual(calls, [0.35])
 
 

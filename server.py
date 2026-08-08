@@ -44,7 +44,7 @@ Local Vision MCP Server v2
                           开启后超限大图自动等比缩小，防 detailed 卡死（全局细节会略降，要精度请走局部裁切）
   LOCAL_VISION_ZS_TRANSLATE 中文零样本自动翻译开关，默认 1（开启）：常见物体走词典直译，
                           其余走本地 Ollama 翻译成英文再检测；设为 0 关闭
-  LOCAL_VISION_CONF_FLOOR  检测/分割自动降置信度重试的下限，默认 0.15；设为 0 关闭自动重试
+  LOCAL_VISION_CONF_FLOOR  检测/分割自动降置信度重试的下限，默认 0=关闭；设为 0.15 等开启
   DETECTION_MODEL       默认 COCO 检测模型，默认 yolov8n.pt
   DETECTION_TEXT_MODEL   默认零样本检测模型，默认 yoloe-v8s-seg.pt
   VISION_OUTPUT_DIR     可选。设置后所有生成文件只能写入该目录
@@ -102,7 +102,7 @@ LOCAL_VISION_ZS_TRANSLATE = os.environ.get("LOCAL_VISION_ZS_TRANSLATE", "1").str
     "true",
     "yes",
 )
-_AUTO_CONF_FLOOR = float(os.environ.get("LOCAL_VISION_CONF_FLOOR", "0.15"))
+_AUTO_CONF_FLOOR = float(os.environ.get("LOCAL_VISION_CONF_FLOOR", "0"))
 _AUTO_CONF_STEPS = (0.25, 0.15)
 
 DEFAULT_PROMPT = "请详细描述这张图片的内容，包括画面主体、布局和图中出现的所有文字。"
