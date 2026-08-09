@@ -44,6 +44,9 @@ Data flow: pure-text main model (Codex / Claude Code / opencode / DeepSeek, etc.
 
 ```
 server.py                  MCP server (single file, zero-dependency core)
+call_tool.py               command-line tool access (CLI fallback when MCP is unavailable)
+register_mcp.py            safe MCP registration in Python
+check_mcp.py               MCP connectivity handshake probe
 win_ocr.ps1                Windows built-in OCR bridge
 skills/vision-perceive/    multi-round vision skill
 tests/                     offline unit tests + real-machine smoke tests
@@ -116,6 +119,24 @@ powershell -ExecutionPolicy Bypass -File install-skill.ps1
 | `draw_bounding_box` | Draw multiple boxes at once (`boxes` array) for visual verification |
 | `list_local_models` | List local Ollama models |
 | `vision_status` | Troubleshooting: version, Ollama reachability, model readiness, optional deps, cache/retry config |
+
+## Use directly from the command line (CLI fallback)
+
+If your client does not inject the MCP tools into the current conversation (you don't see `analyze_image` / `ocr_extract` etc.),
+you can call the same local tools from the command line — results are identical to the MCP tools:
+
+```powershell
+python call_tool.py <tool> '<JSON args>'
+```
+
+Examples:
+
+- Describe an image: `python call_tool.py analyze_image '{"file_path":"C:/x.png","mode":"quick"}'`
+- Extract text: `python call_tool.py ocr_extract '{"file_path":"C:/x.png","engine":"auto"}'`
+- Count/find objects: `python call_tool.py detect_objects '{"file_path":"C:/x.png","classes":["person"]}'`
+
+Running it without arguments lists all 12 tools. The `vision-perceive` skill includes this fallback: when MCP tools are
+unavailable it automatically switches to the CLI, so vision analysis never gets skipped because the client didn't inject tools.
 
 ## Which locating tool should I use?
 
@@ -209,9 +230,10 @@ python -c "from ultralytics import YOLO; YOLO('yoloe-v8s-seg.pt')"
 python tests\test_server.py
 python tests\test_edge_cases.py
 python tests\test_robustness.py
+python tests\test_cli.py
 ```
 
-Offline tests verify the protocol and all tools with a mocked Ollama: 87 checks — `test_server.py` (37: analyze / cache / transient retry incl. 429 / per-image multi-image / montage comparison / relative-path rejection / fake-format rejection / oversized-image rejection / crop / draw / cv_locate / error paths / output-dir enforcement / zero-shot translation bridge), `test_edge_cases.py` (22: EXIF orientation / transparent white background / invalid-color errors / crop scale memory cap / reversed boxes / format compatibility / locating edge cases), and `test_robustness.py` (28: cache TTL/eviction/concurrency / Ollama host normalization / defensive Paddle parsing / detection formatting / montage extremes / tool schemas / output-overwrite protection / benchmark utilities).
+Offline tests verify the protocol and all tools with a mocked Ollama: 98 checks — `test_server.py` (37: analyze / cache / transient retry incl. 429 / per-image multi-image / montage comparison / relative-path rejection / fake-format rejection / oversized-image rejection / crop / draw / cv_locate / error paths / output-dir enforcement / zero-shot translation bridge), `test_edge_cases.py` (22: EXIF orientation / transparent white background / invalid-color errors / crop scale memory cap / reversed boxes / format compatibility / locating edge cases), `test_robustness.py` (28: cache TTL/eviction/concurrency / Ollama host normalization / defensive Paddle parsing / detection formatting / montage extremes / tool schemas / output-overwrite protection / benchmark utilities), and `test_cli.py` (11: CLI fallback — usage / unknown tool / bad JSON / direct args / args-file / stdin / exit codes).
 
 There is also a **reproducible benchmark** (quantified accuracy, synthetic images + ground truth):
 

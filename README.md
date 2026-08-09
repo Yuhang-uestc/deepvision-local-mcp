@@ -47,6 +47,9 @@ DeepSeek 等纯文本模型没有视觉能力，但通过 MCP 工具可以获得
 
 ```
 server.py                  MCP 服务器本体（单文件，基础零依赖）
+call_tool.py               命令行调用工具（MCP 不可用时的 CLI 兜底）
+register_mcp.py            安全注册 MCP 的 Python 实现
+check_mcp.py               MCP 连通性握手探针
 win_ocr.ps1                Windows 内置 OCR 调用脚本
 skills/vision-perceive/    多轮识图闭环 skill
 tests/                     离线单元测试 + 真机冒烟测试
@@ -121,6 +124,24 @@ powershell -ExecutionPolicy Bypass -File install-skill.ps1
 | `draw_bounding_box` | 一次画多个框（boxes 数组），可视化验证 |
 | `list_local_models` | 查看本机 Ollama 模型 |
 | `vision_status` | 排障：版本、Ollama 连通性、模型就绪、可选依赖、缓存/重试配置 |
+
+## 命令行直接用（CLI 兜底）
+
+如果客户端没有把 MCP 工具注入当前会话（工具列表里看不到 `analyze_image` / `ocr_extract` 等），
+可以直接用命令行调用同一套本地工具，效果与 MCP 完全等价：
+
+```powershell
+python call_tool.py <工具名> '<JSON 参数>'
+```
+
+示例：
+
+- 看图说话：`python call_tool.py analyze_image '{"file_path":"C:/x.png","mode":"quick"}'`
+- 提取文字：`python call_tool.py ocr_extract '{"file_path":"C:/x.png","engine":"auto"}'`
+- 数人/找物体：`python call_tool.py detect_objects '{"file_path":"C:/x.png","classes":["person"]}'`
+
+不带参数运行会列出全部 12 个工具。`vision-perceive` skill 已内置该兜底：MCP 工具不可用时自动改用 CLI，
+不会因为客户端没注入工具而跳过识图。
 
 ## 定位工具箱（该用哪个）
 
@@ -221,9 +242,10 @@ python -c "from ultralytics import YOLO; YOLO('yoloe-v8s-seg.pt')"
 python tests\test_server.py
 python tests\test_edge_cases.py
 python tests\test_robustness.py
+python tests\test_cli.py
 ```
 
-离线测试用 mock Ollama 验证协议与全部工具，共 87 项：`test_server.py` 37 项（analyze / 缓存 / 瞬时错误重试含 429 / 多图逐张 / 拼图对比 / 相对路径拒绝 / 伪格式拒绝 / 超大图拒绝 / crop / draw / cv_locate / 错误路径 / 输出目录限制 / 零样本翻译桥等）+ `test_edge_cases.py` 22 项（EXIF 方向 / 透明图白底 / 非法颜色报错 / scale 内存上限 / 反向坐标 / 格式兼容 / 定位边界）+ `test_robustness.py` 28 项（缓存 TTL/淘汰/并发 / Ollama 主机归一化 / Paddle 解析防御 / 检测格式化 / 拼图极端 / 工具 schema / 输出覆盖保护 / 基准工具函数）。
+离线测试用 mock Ollama 验证协议与全部工具，共 98 项：`test_server.py` 37 项（analyze / 缓存 / 瞬时错误重试含 429 / 多图逐张 / 拼图对比 / 相对路径拒绝 / 伪格式拒绝 / 超大图拒绝 / crop / draw / cv_locate / 错误路径 / 输出目录限制 / 零样本翻译桥等）+ `test_edge_cases.py` 22 项（EXIF 方向 / 透明图白底 / 非法颜色报错 / scale 内存上限 / 反向坐标 / 格式兼容 / 定位边界）+ `test_robustness.py` 28 项（缓存 TTL/淘汰/并发 / Ollama 主机归一化 / Paddle 解析防御 / 检测格式化 / 拼图极端 / 工具 schema / 输出覆盖保护 / 基准工具函数）+ `test_cli.py` 11 项（CLI 兜底：用法 / 未知工具 / 坏 JSON / 直参 / args-file / stdin / 错误码）。
 
 另有**基准测试**（量化精度，合成图 + 标准答案，可复现）：
 
