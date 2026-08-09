@@ -19,6 +19,7 @@
 ### 文档
 - README / skill / 架构说明 / 开发记录同步多图策略与边界行为；新增 tests/test_edge_cases.py（22 项）与 tests/test_robustness.py（28 项）
 - 注册与自检增强：`register-mcp.ps1` 自动写入 Python 绝对路径并升级旧注册；`check.ps1` 的 MCP 检查升级为真实握手探针（新增 `check_mcp.py`）；部署文档新增"MCP 工具没出现"排查
+- 注册安全加固：`register-mcp.ps1` 改为调用 `register_mcp.py`（tomllib 外科手术式修改，只动 local_vision 一节；备份 + 写前/写后校验 + 失败自动回滚；检测运行中的 Codex 并中止）；文档与 README 增加"先退出 Codex 再注册"警告
 
 ## v2.2.0（2026-08-07）
 

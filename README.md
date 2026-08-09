@@ -80,6 +80,8 @@ powershell -ExecutionPolicy Bypass -File setup.ps1 -Extras
 
 `setup.ps1` = 环境检查 +（可选依赖）+ 注册 MCP + 安装 skill 的整合脚本，可重复执行（幂等）。
 
+> ⚠️ 注册 MCP 前请**先完全退出 Codex 桌面应用**，注册完再启动；运行中的应用可能用旧配置覆盖你的修改。`register-mcp.ps1` 检测到 Codex 在运行时会自动中止。
+
 ### 方式二：分步安装（想看清每一步）
 
 ```powershell
