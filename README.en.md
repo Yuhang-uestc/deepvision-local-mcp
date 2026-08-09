@@ -296,6 +296,12 @@ It covers OCR (Chinese/English/tables/small text), color locating & counting, te
 
 This project follows the standard MCP protocol — **vision is decoupled from the main model and the client**. The verified combination is **Codex + DeepSeek (Windows)**; the combinations below are compatible by protocol but **not individually tested**. If something goes wrong, follow "Deployment & FAQ".
 
+Important premise: **whether MCP tools are actually callable depends on the client injecting them into the current conversation** — this is client behavior, not a property of the server (e.g. some desktop clients do not inject MCP tools for third-party model channels; the client's own bundled MCP servers may not be injected either). Therefore:
+
+- When the client supports MCP tool calls, this project works directly;
+- When the client does not inject MCP tools, the **CLI fallback still works**: `python call_tool.py <tool> '<JSON args>'`, fully equivalent to the MCP tools (see "Use directly from the command line");
+- For scenario-based tool selection, see [docs/识图使用指南.md](docs/识图使用指南.md) (Chinese).
+
 ### 1. Switch the main model (the brain)
 
 server.py does not depend on DeepSeek; it only speaks MCP. Any mainstream model (Claude, GPT, Qwen, GLM, Kimi, etc.) can be the "brain" as long as your client supports MCP tool calls — just switch the model in your client; no changes to this project. Tool descriptions are in Chinese; mainstream models read them fine.

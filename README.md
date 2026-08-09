@@ -50,6 +50,7 @@ server.py                  MCP 服务器本体（单文件，基础零依赖）
 call_tool.py               命令行调用工具（MCP 不可用时的 CLI 兜底）
 register_mcp.py            安全注册 MCP 的 Python 实现
 check_mcp.py               MCP 连通性握手探针
+AGENTS.md                  识图规范（Codex 自动加载，场景 → 工具映射）
 win_ocr.ps1                Windows 内置 OCR 调用脚本
 skills/vision-perceive/    多轮识图闭环 skill
 tests/                     离线单元测试 + 真机冒烟测试
@@ -288,6 +289,7 @@ python benchmarks\run_benchmark.py
 ## 部署与排障
 
 - [Roadmap](ROADMAP.md) — 项目方向与规划（近期做啥 / 明确不做啥）
+- [识图使用指南](docs/识图使用指南.md) — 场景 → 工具速查（含 CLI 示例）
 - [架构说明](docs/架构说明.md) — 设计目标、分层、数据流、设计决策、扩展点
 - [部署与常见问题（用户向）](docs/部署与常见问题.md) — 照做即可部署，按症状查问题
 - [开发记录与踩坑（内部）](docs/开发记录与踩坑.md) — 开发过程所有问题的根因与对策
@@ -309,6 +311,13 @@ python benchmarks\run_benchmark.py
 
 本项目按标准 MCP 协议设计，**视觉能力与主模型、客户端解耦**。当前已验证组合：**Codex + DeepSeek（Windows）**；
 以下组合按标准协议兼容，**未逐项实测**，遇到问题按"部署与常见问题"排查。
+
+需要说明的前提：**MCP 工具能否被调用，取决于客户端是否把它注入当前会话**——这是客户端行为，与 server 无关
+（例如部分桌面端对第三方模型通道不注入 MCP 工具，官方自带的 MCP 服务器可能同样不注入）。因此：
+
+- 客户端支持 MCP 工具调用时，本项目直接可用；
+- 客户端未注入 MCP 工具时，**CLI 兜底保证仍然可用**：`python call_tool.py <工具名> '<JSON 参数>'`，与 MCP 工具完全等价（见「命令行直接用」一节）；
+- 具体场景怎么选工具，见 [docs/识图使用指南.md](docs/识图使用指南.md)。
 
 ### 1. 换主模型（脑）
 
