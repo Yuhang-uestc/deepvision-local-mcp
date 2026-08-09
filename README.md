@@ -233,7 +233,7 @@ powershell -ExecutionPolicy Bypass -File install-extra.ps1
 python -c "from ultralytics import YOLO; YOLO('yoloe-v8s-seg.pt')"
 ```
 
-## 健壮性与安全（v2.2）
+## 健壮性与安全（v2.3）
 
 - **结果缓存**：`analyze_image` / `ocr_extract` 对"相同图片内容 + 相同参数"自动命中缓存（按内容哈希，文件被替换会自动失效），
   第二次调用秒回，不用重复等本地模型推理。可用 `LOCAL_VISION_CACHE=0` 关闭。
@@ -318,7 +318,7 @@ python benchmarks\run_benchmark.py
 
 ## 兼容性（换工具 / 换模型 / 换平台）
 
-本项目按标准 MCP 协议设计，**视觉能力与主模型、客户端解耦**。当前已验证组合：**Codex + DeepSeek（Windows）**；
+本项目按标准 MCP 协议设计，**视觉能力与主模型、客户端解耦**。已实测：**server 协议 + CLI 兜底在 Codex + DeepSeek（Windows）下可用**；
 以下组合按标准协议兼容，**未逐项实测**，遇到问题按"部署与常见问题"排查。
 
 需要说明的前提：**MCP 工具能否被调用，取决于客户端是否把它注入当前会话**——这是客户端行为，与 server 无关

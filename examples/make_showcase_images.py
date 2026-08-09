@@ -107,11 +107,11 @@ def make_demo_input(scale=2):
     d.rounded_rectangle([584 * S, 204 * S, 936 * S, 420 * S], radius=10 * S, fill="#ffffff", outline="#e2e8f0", width=1 * S)
     d.text((600 * S, 220 * S), "Recent Activity", font=font(FONT_BOLD, 18 * S), fill="#334155")
     acts = [
-        ("#22c55e", "Deploy v2.2 to production"),
+        ("#22c55e", "Deploy v2.3 to production"),
         ("#2563eb", "Fix OCR bounding box bug"),
         ("#f59e0b", "Review PR #42"),
         ("#22c55e", "Update deployment docs"),
-        ("#8b5cf6", "Run 21 offline tests"),
+        ("#8b5cf6", "Run 98 offline tests"),
     ]
     ay = 254 * S
     for color, text in acts:
@@ -287,7 +287,7 @@ def make_social_preview():
     d.text((70, 232), "本地眼睛", font=font(FONT_BOLD, 84), fill="#ffffff")
     d.text((70, 344), "OCR · 检测 · 分割 · 零样本 · 定位 · 裁切放大", font=font(FONT_REG, 38), fill="#cbd5e1")
     d.text((70, 400), "图片文件不出本机 · 视觉识别全本地", font=font(FONT_REG, 38), fill="#7dd3fc")
-    chips = ["11 个工具", "21 项离线测试", "相同图片缓存秒回", "多轮闭环防幻觉"]
+    chips = ["12 个工具", "98 项离线测试", "相同图片缓存秒回", "多轮闭环防幻觉"]
     cx, cy = 70, 492
     for chip in chips:
         tw = d.textlength(chip, font=font(FONT_BOLD, 26))
@@ -319,7 +319,7 @@ def make_architecture():
 
     box(50, 210, 260, 240, "MCP 客户端", ["Codex / Claude Code", "Cursor / Trae / opencode", "", "纯文本主模型", "DeepSeek 等"], "#7dd3fc")
     box(380, 70, 300, 170, "vision-perceive skill", ["快速/详细模式决策", "多轮识图闭环", "概览→聚焦→交叉校验"], "#fbbf24")
-    box(760, 70, 340, 170, "server.py · MCP stdio", ["11 个工具：描述 / OCR / 检测", "/ 分割 / 零样本 / 定位 / 裁切", "/ 画框 / 信息 / 模型 / 状态"], "#38bdf8")
+    box(760, 70, 340, 170, "server.py · MCP stdio", ["12 个工具：描述 / OCR / 检测", "/ 分割 / 零样本 / 定位 / 裁切", "/ 画框 / 对比 / 信息 / 模型 / 状态"], "#38bdf8")
     draw_arrow(d, 310, 260, 380, 135, "#475569")
     draw_arrow(d, 680, 150, 760, 150, "#475569")
 

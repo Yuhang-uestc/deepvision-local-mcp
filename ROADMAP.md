@@ -9,6 +9,7 @@
 - 英文 README + 仓库卫生（密钥、权重、真人照片、营销素材全部 gitignore）
 - Issue 模板（Bug 报告 / 功能建议，中文）
 - 多图支持（v2.3.0）：`analyze_image` 多图逐张分析 + `compare_images` 拼图对比，共 12 个工具
+- CLI 兜底 + 全局 AGENTS 规范（v2.3.0）：不依赖客户端 MCP 注入，命令行动手可用；安装 skill 时自动装全局识图入口
 
 ## 近期规划（按优先级）
 

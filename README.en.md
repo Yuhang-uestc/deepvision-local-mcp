@@ -224,7 +224,7 @@ Pre-download the zero-shot model (optional, avoids waiting on first call):
 python -c "from ultralytics import YOLO; YOLO('yoloe-v8s-seg.pt')"
 ```
 
-## Robustness & security (v2.2)
+## Robustness & security (v2.3)
 
 - **Result caching**: `analyze_image` / `ocr_extract` cache by "same image content + same params" (content hash, so replacing a file invalidates the cache). Repeat calls return instantly. Disable with `LOCAL_VISION_CACHE=0`.
 - **Auto retry**: transient Ollama failures (HTTP 429/5xx, network jitter) retry with exponential backoff (default 2); a missing model (404) is not retried — you get an install hint instead.
@@ -303,7 +303,7 @@ It covers OCR (Chinese/English/tables/small text), color locating & counting, te
 
 ## Compatibility (switching tools / models / platforms)
 
-This project follows the standard MCP protocol — **vision is decoupled from the main model and the client**. The verified combination is **Codex + DeepSeek (Windows)**; the combinations below are compatible by protocol but **not individually tested**. If something goes wrong, follow "Deployment & FAQ".
+This project follows the standard MCP protocol — **vision is decoupled from the main model and the client**. Verified: **the server protocol and CLI fallback work with Codex + DeepSeek (Windows)**; the combinations below are compatible by protocol but **not individually tested**. If something goes wrong, follow "Deployment & FAQ".
 
 Important premise: **whether MCP tools are actually callable depends on the client injecting them into the current conversation** — this is client behavior, not a property of the server (e.g. some desktop clients do not inject MCP tools for third-party model channels; the client's own bundled MCP servers may not be injected either). Therefore:
 
