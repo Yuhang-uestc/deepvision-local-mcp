@@ -208,9 +208,10 @@ python -c "from ultralytics import YOLO; YOLO('yoloe-v8s-seg.pt')"
 ```powershell
 python tests\test_server.py
 python tests\test_edge_cases.py
+python tests\test_robustness.py
 ```
 
-Offline tests verify the protocol and all tools with a mocked Ollama: 52 checks — `test_server.py` (30: analyze / cache hit / transient retry / per-image multi-image / montage comparison / relative-path rejection / fake-format rejection / optional downscale / crop / draw / cv_locate / error paths / output-dir enforcement / zero-shot translation bridge) plus `test_edge_cases.py` (22: EXIF orientation / transparent white background / invalid-color errors / crop scale memory cap / reversed boxes / format compatibility / locating edge cases).
+Offline tests verify the protocol and all tools with a mocked Ollama: 87 checks — `test_server.py` (37: analyze / cache / transient retry incl. 429 / per-image multi-image / montage comparison / relative-path rejection / fake-format rejection / oversized-image rejection / crop / draw / cv_locate / error paths / output-dir enforcement / zero-shot translation bridge), `test_edge_cases.py` (22: EXIF orientation / transparent white background / invalid-color errors / crop scale memory cap / reversed boxes / format compatibility / locating edge cases), and `test_robustness.py` (28: cache TTL/eviction/concurrency / Ollama host normalization / defensive Paddle parsing / detection formatting / montage extremes / tool schemas / output-overwrite protection / benchmark utilities).
 
 There is also a **reproducible benchmark** (quantified accuracy, synthetic images + ground truth):
 

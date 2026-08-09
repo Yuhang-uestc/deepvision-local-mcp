@@ -13,9 +13,11 @@
 - `crop_image` 的 scale 无上限：放大后输出超过 50MP 会拒绝，防止内存被撑爆
 - 裁切右/下边界被钳到 w-1：导致永远裁不到最后一行/列（现允许边界取到 w/h）
 - 透明 PNG 在拼图/画框中变黑底（现以白色打底）
+- `OLLAMA_HOST` 带路径（如代理地址 `https://host/api`）时端口会被追加到路径末尾，现只在 host:port 部分补端口
+- PaddleOCR 结果解析器遇到畸形条目会整体抛异常，现逐条防御、跳过坏行
 
 ### 文档
-- README / skill / 架构说明 / 开发记录同步多图策略与边界行为；新增 tests/test_edge_cases.py（22 项）与多图测试
+- README / skill / 架构说明 / 开发记录同步多图策略与边界行为；新增 tests/test_edge_cases.py（22 项）与 tests/test_robustness.py（28 项）
 
 ## v2.2.0（2026-08-07）
 

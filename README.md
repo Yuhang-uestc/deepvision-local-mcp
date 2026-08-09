@@ -218,9 +218,10 @@ python -c "from ultralytics import YOLO; YOLO('yoloe-v8s-seg.pt')"
 ```powershell
 python tests\test_server.py
 python tests\test_edge_cases.py
+python tests\test_robustness.py
 ```
 
-离线测试用 mock Ollama 验证协议与全部工具，共 52 项：`test_server.py` 30 项（analyze / 缓存命中 / 瞬时错误重试 / 多图逐张 / 拼图对比 / 相对路径拒绝 / 伪格式拒绝 / 可选大图缩放 / crop / draw / cv_locate / 错误路径 / 输出目录限制 / 零样本翻译桥等）+ `test_edge_cases.py` 22 项（EXIF 方向 / 透明图白底 / 非法颜色报错 / scale 内存上限 / 反向坐标 / 格式兼容 / 定位边界）。
+离线测试用 mock Ollama 验证协议与全部工具，共 87 项：`test_server.py` 37 项（analyze / 缓存 / 瞬时错误重试含 429 / 多图逐张 / 拼图对比 / 相对路径拒绝 / 伪格式拒绝 / 超大图拒绝 / crop / draw / cv_locate / 错误路径 / 输出目录限制 / 零样本翻译桥等）+ `test_edge_cases.py` 22 项（EXIF 方向 / 透明图白底 / 非法颜色报错 / scale 内存上限 / 反向坐标 / 格式兼容 / 定位边界）+ `test_robustness.py` 28 项（缓存 TTL/淘汰/并发 / Ollama 主机归一化 / Paddle 解析防御 / 检测格式化 / 拼图极端 / 工具 schema / 输出覆盖保护 / 基准工具函数）。
 
 另有**基准测试**（量化精度，合成图 + 标准答案，可复现）：
 

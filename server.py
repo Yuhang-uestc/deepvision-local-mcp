@@ -81,11 +81,21 @@ def _normalize_ollama_host(host: str) -> str:
     if host.startswith("0.0.0.0"):
         # 0.0.0.0 是 Ollama 服务端监听地址，客户端连接应走本机回环
         host = "127.0.0.1" + host[len("0.0.0.0"):]
-    if "://" not in host:
-        host = "http://" + host
-    if ":" not in host.split("/")[-1]:
+    if "://" in host:
+        # 完整 URL：只在 host:port 部分补端口，不要污染路径（如代理地址 /api）
+        scheme, rest = host.split("://", 1)
+        if "/" in rest:
+            netloc, path = rest.split("/", 1)
+            if ":" not in netloc:
+                netloc += ":11434"
+            return f"{scheme}://{netloc}/{path}"
+        if ":" not in rest:
+            return host + ":11434"
+        return host
+    # 裸主机/主机:端口：补协议；带路径时端口加在主机部分
+    if ":" not in host.split("/")[0]:
         host += ":11434"
-    return host
+    return "http://" + host
 
 
 OLLAMA_HOST = _normalize_ollama_host(os.environ.get("OLLAMA_HOST", ""))
@@ -1294,25 +1304,29 @@ def _parse_paddle_v2(result):
         for item in page:
             if not isinstance(item, (list, tuple)) or len(item) < 2:
                 continue
-            box, txt_info = item[0], item[1]
-            if isinstance(txt_info, (list, tuple)) and txt_info:
-                text = str(txt_info[0])
-                confidence = txt_info[1] if len(txt_info) > 1 else None
-            else:
-                text = str(txt_info)
-                confidence = None
-            xs = [float(p[0]) for p in box]
-            ys = [float(p[1]) for p in box]
-            lines.append(
-                {
-                    "text": text,
-                    "x": round(min(xs)),
-                    "y": round(min(ys)),
-                    "w": round(max(xs) - min(xs)),
-                    "h": round(max(ys) - min(ys)),
-                    "confidence": confidence,
-                }
-            )
+            try:
+                box, txt_info = item[0], item[1]
+                if isinstance(txt_info, (list, tuple)) and txt_info:
+                    text = str(txt_info[0])
+                    confidence = txt_info[1] if len(txt_info) > 1 else None
+                else:
+                    text = str(txt_info)
+                    confidence = None
+                xs = [float(p[0]) for p in box]
+                ys = [float(p[1]) for p in box]
+                lines.append(
+                    {
+                        "text": text,
+                        "x": round(min(xs)),
+                        "y": round(min(ys)),
+                        "w": round(max(xs) - min(xs)),
+                        "h": round(max(ys) - min(ys)),
+                        "confidence": confidence,
+                    }
+                )
+            except (TypeError, ValueError, IndexError):
+                # 单条畸形结果直接跳过，不让整个页面解析失败
+                continue
     return lines
 
 
@@ -1327,18 +1341,21 @@ def _parse_paddle_v3(result):
         for i, poly in enumerate(polys):
             if i >= len(texts):
                 break
-            xs = [float(p[0]) for p in poly]
-            ys = [float(p[1]) for p in poly]
-            lines.append(
-                {
-                    "text": str(texts[i]),
-                    "x": round(min(xs)),
-                    "y": round(min(ys)),
-                    "w": round(max(xs) - min(xs)),
-                    "h": round(max(ys) - min(ys)),
-                    "confidence": scores[i] if i < len(scores) else None,
-                }
-            )
+            try:
+                xs = [float(p[0]) for p in poly]
+                ys = [float(p[1]) for p in poly]
+                lines.append(
+                    {
+                        "text": str(texts[i]),
+                        "x": round(min(xs)),
+                        "y": round(min(ys)),
+                        "w": round(max(xs) - min(xs)),
+                        "h": round(max(ys) - min(ys)),
+                        "confidence": scores[i] if i < len(scores) else None,
+                    }
+                )
+            except (TypeError, ValueError, IndexError):
+                continue
     return lines
 
 

@@ -25,6 +25,7 @@ class MockHandler(BaseHTTPRequestHandler):
     # 类级计数器：用于验证缓存命中与重试行为
     generate_calls = 0
     fail_first_generate = 0
+    fail_code = 500
     last_images = []
 
     def log_message(self, *args):
@@ -49,7 +50,7 @@ class MockHandler(BaseHTTPRequestHandler):
             MockHandler.generate_calls += 1
             if MockHandler.fail_first_generate > 0:
                 MockHandler.fail_first_generate -= 1
-                self._send({"error": "internal error"}, 500)
+                self._send({"error": "internal error"}, MockHandler.fail_code)
                 return
             n = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(n) if n else b""
@@ -216,6 +217,89 @@ class TestLocalVision(unittest.TestCase):
             self.assertGreaterEqual(MockHandler.generate_calls - before, 2)
         finally:
             MockHandler.fail_first_generate = 0
+
+    def test_ollama_retry_429(self):
+        # 429（限流）与 5xx 一样属于瞬时错误，应自动重试
+        MockHandler.fail_code = 429
+        MockHandler.fail_first_generate = 1
+        try:
+            before = MockHandler.generate_calls
+            r = self.result(
+                self.client.call(
+                    "analyze_image", {"file_path": self.test_img, "prompt": "retry-429-test"}
+                )
+            )
+            self.assertFalse(r["isError"], r)
+            self.assertGreaterEqual(MockHandler.generate_calls - before, 2)
+        finally:
+            MockHandler.fail_code = 500
+            MockHandler.fail_first_generate = 0
+
+    def test_ollama_retry_zero_fails_fast(self):
+        # LOCAL_VISION_RETRIES=0：不重试，5xx 直接报错
+        env = dict(self.env)
+        env["LOCAL_VISION_RETRIES"] = "0"
+        c = McpClient(env)
+        try:
+            c.init()
+            MockHandler.fail_code = 500
+            MockHandler.fail_first_generate = 1
+            r = self.result(
+                c.call("analyze_image", {"file_path": self.test_img, "prompt": "no-retry-test"})
+            )
+            self.assertTrue(r["isError"])
+            self.assertIn("HTTP 500", r["content"][0]["text"])
+        finally:
+            c.close()
+            MockHandler.fail_first_generate = 0
+            MockHandler.fail_code = 500
+
+    def test_cache_disabled(self):
+        # LOCAL_VISION_CACHE=0：相同图片+参数两次调用都应走模型，不命中缓存
+        env = dict(self.env)
+        env["LOCAL_VISION_CACHE"] = "0"
+        c = McpClient(env)
+        try:
+            c.init()
+            before = MockHandler.generate_calls
+            r1 = self.result(
+                c.call("analyze_image", {"file_path": self.test_img, "prompt": "cache-off-test"})
+            )
+            r2 = self.result(
+                c.call("analyze_image", {"file_path": self.test_img, "prompt": "cache-off-test"})
+            )
+            self.assertFalse(r1["isError"])
+            self.assertFalse(r2["isError"])
+            self.assertEqual(MockHandler.generate_calls - before, 2)
+        finally:
+            c.close()
+
+    def test_oversized_image_rejected(self):
+        # LOCAL_VISION_MAX_MB=0：任何图片都超过上限，应被明确拒绝
+        env = dict(self.env)
+        env["LOCAL_VISION_MAX_MB"] = "0"
+        c = McpClient(env)
+        try:
+            c.init()
+            r = self.result(c.call("analyze_image", {"file_path": self.test_img}))
+            self.assertTrue(r["isError"])
+            self.assertIn("图片过大", r["content"][0]["text"])
+        finally:
+            c.close()
+
+    def test_unknown_tool_error(self):
+        resp = self.client.call("no_such_tool", {})
+        self.assertIn("error", resp)
+        self.assertIn("未知工具", resp["error"]["message"])
+
+    def test_analyze_missing_args(self):
+        r = self.result(self.client.call("analyze_image", {}))
+        self.assertTrue(r["isError"])
+        self.assertIn("file_path", r["content"][0]["text"])
+
+    def test_tools_count(self):
+        tools = self.result(self.client.tools())["tools"]
+        self.assertEqual(len(tools), 12)
 
     def test_vision_status(self):
         r = self.result(self.client.call("vision_status", {}))
