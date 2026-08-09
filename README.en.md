@@ -104,7 +104,8 @@ powershell -ExecutionPolicy Bypass -File install-skill.ps1
 
 | Tool | Purpose |
 |---|---|
-| `analyze_image` | Local vision model analyzes an image; `mode=quick` for a short fast result (default 4B, auto-fallback), `mode=detailed` for a full one (default 8B); `file_paths` accepts multiple images (only the first is used with qwen3-vl; compare by analyzing each separately); `num_ctx` / `temperature` adjustable |
+| `analyze_image` | Local vision model analyzes an image; `mode=quick` for a short fast result (default 4B, auto-fallback), `mode=detailed` for a full one (default 8B); `file_paths` analyzes multiple images one by one and merges the results (every image is fully seen); `num_ctx` / `temperature` adjustable |
+| `compare_images` | Use when the user explicitly asks to compare: images are merged into a labeled grid (图1/图2…) and analyzed in one pass (images are downscaled; for details, analyze each image separately with `analyze_image`) |
 | `image_info` | Read dimensions / format / size to establish the coordinate system |
 | `ocr_extract` | Text extraction; `engine=auto` prefers PaddleOCR, otherwise Windows OCR (with positions) |
 | `detect_objects` | YOLO detection over COCO 80 classes; returns class/confidence/box; `save_path` saves an annotated image |
@@ -260,7 +261,7 @@ It covers OCR (Chinese/English/tables/small text), color locating & counting, te
 - **Recognized text goes to the cloud with your conversation**: image files never leave the machine, but OCR/description text enters the main model's conversation; with a cloud API main model (e.g., DeepSeek), that text is sent to its servers. Pair with a local main model (e.g., qwen3 / deepseek-r1 in Ollama) for full isolation.
 - **Zero-shot Chinese descriptions rely on local translation**: common objects use a dictionary; the rest use local Ollama (a few seconds). If Ollama is down, only dictionary terms work — use English for complex descriptions.
 - **qwen3-vl returns empty output when `num_predict` (max_tokens) is set** (verified Ollama behavior); keep output length controlled with a compact prompt instead.
-- **Multi-image comparison (`file_paths`) is ineffective with qwen3-vl:8b** (verified): Ollama only passes the first image; the second is ignored. For comparisons, analyze each image separately and let the main model combine the results.
+- **Multi-image strategy**: qwen3-vl only reads one image per call, so `analyze_image(file_paths=[...])` analyzes each image separately and merges the results (every image is fully seen). When the user explicitly asks to "compare/differences", use `compare_images` (grid montage). The montage downscales images; for details, analyze each image separately.
 - **OCR has a misread rate**: occasional errors; cross-check important text with the vision model. Artistic fonts/handwriting work poorly.
 - **OCR coordinates are 0 under PowerShell 5.1**: only for the Windows built-in OCR fallback path (WinRT limitation); coordinates are normal with the PaddleOCR engine. Installing [PowerShell 7](https://github.com/PowerShell/PowerShell) fixes the fallback path too.
 - **8B model speed**: ~20-60s per image; use 4B for speed.
@@ -340,7 +341,7 @@ Switch via env vars or call params: `OLLAMA_VISION_MODEL` (detailed), `VISION_MO
 
 ### Explicitly incompatible / notes
 
-- `file_paths` multi-image comparison with qwen3-vl only reads the first image (model behavior, not client-specific)
+- `file_paths` analyzes multiple images one by one and merges results; "comparison" uses `compare_images` (montage, images are downscaled)
 - Coordinate tasks should use detection/segmentation tools; don't expect any vision model to output precise coordinates directly
 
 ## FAQ

@@ -179,6 +179,7 @@ class TestLocalVision(unittest.TestCase):
             "cv_locate",
             "crop_image",
             "draw_bounding_box",
+            "compare_images",
             "list_local_models",
             "vision_status",
         ):
@@ -233,6 +234,38 @@ class TestLocalVision(unittest.TestCase):
             )
         )
         self.assertFalse(r["isError"])
+        text = r["content"][0]["text"]
+        # 多图应逐张分析并带编号，而不是只认第一张
+        self.assertIn("图1", text)
+        self.assertIn("图2", text)
+        # 每次调用只发一张图（逐张模式）
+        self.assertEqual(len(MockHandler.last_images), 1)
+
+    def test_compare_images_montage(self):
+        img2 = make_image(os.path.join(self.tmp.name, "test2.png"), w=240, h=320)
+        r = self.result(
+            self.client.call(
+                "compare_images",
+                {"file_paths": [self.test_img, img2], "prompt": "对比一下"},
+            )
+        )
+        self.assertFalse(r["isError"], r)
+        text = r["content"][0]["text"]
+        self.assertIn("已拼接 2 张图", text)
+        self.assertIn("模拟视觉模型", text)
+        # 拼图后只发一张图给 Ollama，且为横向网格（2 图并排）
+        self.assertEqual(len(MockHandler.last_images), 1)
+        import base64
+        import io
+        from PIL import Image
+
+        with Image.open(io.BytesIO(base64.b64decode(MockHandler.last_images[0]))) as im:
+            self.assertGreater(im.size[0], im.size[1])
+
+    def test_compare_images_need_two(self):
+        r = self.result(self.client.call("compare_images", {"file_paths": [self.test_img]}))
+        self.assertTrue(r["isError"])
+        self.assertIn("至少 2 张", r["content"][0]["text"])
 
     def test_analyze_quick_fallback(self):
         # quick 模式默认 qwen3-vl:4b，mock 返回 404，应自动回退 qwen3-vl:8b

@@ -17,7 +17,8 @@ description: 多轮识图闭环。当用户要求识别、描述或分析一张�
 | 工具 | 用途 |
 |---|---|
 | `image_info` | 先拿尺寸/格式，确定坐标系 |
-| `analyze_image` | 本地视觉模型描述画面；`mode=quick` 快速限长、`mode=detailed` 完整；`file_paths` 可多图对比 |
+| `analyze_image` | 本地视觉模型描述画面；`mode=quick` 快速限长、`mode=detailed` 完整；`file_paths` 多张图会逐张分析后合并返回 |
+| `compare_images` | 用户明确要求"对比/有什么区别"时用：多图拼成图1/图2…网格，一次分析异同（拼图会缩小单图） |
 | `ocr_extract` | 文字提取；`engine=auto` 优先 PaddleOCR，没有则用 Windows OCR |
 | `detect_objects` | YOLO 检测 COCO 80 类（person/car/…），数人/找常见物体 |
 | `segment_objects` | YOLO 分割（默认 yolov8n-seg.pt）：像素级掩膜+面积，遮挡数人和遥感量算用这个 |
@@ -51,6 +52,7 @@ description: 多轮识图闭环。当用户要求识别、描述或分析一张�
 ## 规则
 
 - 快速模式只调 1 次 `analyze_image(mode="quick")`，禁止展开多轮。
+- 多张图：默认每张都走一次 `analyze_image`（快速/详细按需），最后综合；只有用户明确要求"对比/有什么区别/哪个更好"时才用 `compare_images`（拼图对比），不要主动拼图。
 - 详细模式至少完成概览 + 一次聚焦 + 综合，缺一不可。
 - 小字、小目标、印章、仪表读数：先放大再识别，禁止直接拿原图硬读。
 - 大图（宽约 1500px 以上）：不要对整图跑 detailed，容易超时。先 quick 概览；确需细看时用 `crop_image` 裁出目标区域、放大后再对该区域 detailed。

@@ -54,6 +54,7 @@ import base64
 import contextlib
 import hashlib
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -65,7 +66,7 @@ import urllib.request
 import zipfile
 
 SERVER_NAME = "local-vision"
-SERVER_VERSION = "2.2.0"
+SERVER_VERSION = "2.3.0"
 
 
 def _normalize_ollama_host(host: str) -> str:
@@ -124,7 +125,8 @@ TOOLS = [
         "description": (
             "用本地视觉模型（Ollama）分析一张或多张本地图片，返回文字描述，用于给纯文本主模型补看图能力。"
             "mode=quick 走快速模型并限长输出（默认 qwen3-vl:4b，未安装自动回退 8b）；mode=detailed 走完整模型（默认 qwen3-vl:8b）。"
-            "顺手附图用 quick，认真分析图片用 detailed。传 file_path 单张图；需要对比时传 file_paths 数组。图片仅在本机处理。"
+            "顺手附图用 quick，认真分析图片用 detailed。传 file_path 单张图；file_paths 多张图会逐张分析后合并返回（每张都完整看）；"
+            "用户明确要求'对比'时请用 compare_images（拼图对比）。图片仅在本机处理。"
         ),
         "inputSchema": {
             "type": "object",
@@ -136,7 +138,7 @@ TOOLS = [
                 "file_paths": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "可选。多张图片的绝对路径数组，模型会按顺序看到这些图，可做对比。",
+                    "description": "可选。多张图片的绝对路径数组；会逐张分析后合并返回（图1/图2…标签）。",
                 },
                 "prompt": {
                     "type": "string",
@@ -164,6 +166,49 @@ TOOLS = [
                 },
             },
             "required": [],
+        },
+    },
+    {
+        "name": "compare_images",
+        "description": (
+            "对比两张或多张本地图片：按图1/图2…编号拼成一张网格图，交给本地视觉模型一次性分析异同。"
+            "仅当用户明确要求'对比/有什么区别/哪个更好'时使用；只是想让每张图都被看一遍时，请分别调用 analyze_image。"
+            "注意：拼接会缩小单张图，细节场景请先分别 analyze_image 再综合。图片仅在本机处理。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "file_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "必填。至少 2 张本地图片的绝对路径数组。",
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": "可选。对比要求，默认是'对比异同，按图1/图2…编号说明'。",
+                },
+                "mode": {
+                    "type": "string",
+                    "description": "可选。quick（默认 qwen3-vl:4b）或 detailed（默认 qwen3-vl:8b），默认 detailed",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "可选。覆盖默认视觉模型。",
+                },
+                "max_tokens": {
+                    "type": "number",
+                    "description": "可选。限制输出 token 数。",
+                },
+                "num_ctx": {
+                    "type": "number",
+                    "description": "可选。上下文长度，quick 默认 4096、detailed 默认 8192。",
+                },
+                "temperature": {
+                    "type": "number",
+                    "description": "可选。采样温度，0-2，越低越保守。",
+                },
+            },
+            "required": ["file_paths"],
         },
     },
     {
@@ -667,6 +712,58 @@ def _load_font(size: int = 16):
     return font
 
 
+def _montage_images(paths, max_cell=720, label_size=26, pad=12):
+    """把多张图拼成带编号的网格图（图1/图2…），返回 PNG base64。
+
+    用于 compare_images：qwen3-vl 一次只认一张图，拼图是让模型
+    "同时看到"多张图的可行办法。代价是单图被缩小，细节场景应逐张分析。
+    """
+    Image, ImageDraw, _ = _require_pillow()
+    import io
+
+    loaded = []
+    for p in paths:
+        _validate_input_image(p)
+        with Image.open(p) as im:
+            im = im.convert("RGB")
+        w, h = im.size
+        scale = min(1.0, max_cell / float(max(w, h)))
+        nw = max(1, int(round(w * scale)))
+        nh = max(1, int(round(h * scale)))
+        resample = getattr(Image, "Resampling", Image).LANCZOS
+        loaded.append(im.resize((nw, nh), resample))
+
+    n = len(loaded)
+    cols = int(math.ceil(math.sqrt(n)))
+    rows = int(math.ceil(n / cols))
+    cell_w = max(im.width for im in loaded)
+    cell_h = max(im.height for im in loaded)
+    font = _load_font(label_size)
+    canvas_w = cols * cell_w + (cols + 1) * pad
+    canvas_h = rows * cell_h + (rows + 1) * pad
+    canvas = Image.new("RGB", (canvas_w, canvas_h), (245, 245, 245))
+    draw = ImageDraw.Draw(canvas)
+
+    for idx, im in enumerate(loaded):
+        r, c = divmod(idx, cols)
+        x = pad + c * (cell_w + pad)
+        y = pad + r * (cell_h + pad)
+        ox = x + (cell_w - im.width) // 2
+        oy = y + (cell_h - im.height) // 2
+        canvas.paste(im, (ox, oy))
+        label = f"图{idx + 1}"
+        bbox = draw.textbbox((0, 0), label, font=font)
+        lw = bbox[2] - bbox[0] + 10
+        lh = bbox[3] - bbox[1] + 8
+        draw.rectangle((ox, oy, ox + lw, oy + lh), fill=(255, 255, 255))
+        draw.rectangle((ox, oy, ox + lw, oy + lh), outline=(30, 30, 30), width=1)
+        draw.text((ox + 5, oy + 3 - bbox[1]), label, fill=(0, 0, 0), font=font)
+
+    buf = io.BytesIO()
+    canvas.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
 _NAMED_COLORS = {
     "red": (255, 0, 0),
     "green": (0, 255, 0),
@@ -805,6 +902,29 @@ def _nms_matches(matches, overlap=0.4, reverse=True):
     return keep
 
 
+def _ollama_generate_with_fallback(model, prompt, images, options, mode, explicit_model):
+    """单次 Ollama 生成；quick 模型缺失（404）时自动回退 8B。"""
+    try:
+        return ollama_generate(model, prompt, images, options=options)
+    except urllib.error.HTTPError as e:
+        if e.code == 404 and mode == "quick" and not explicit_model and model != VISION_MODEL:
+            log(f"快速模型 {model} 不存在，自动回退到 {VISION_MODEL}")
+            return ollama_generate(VISION_MODEL, prompt, images, options=options)
+        raise
+
+
+def _analyze_images(model, prompt, images, options, mode, explicit_model, paths):
+    """单图直接分析；多图逐张独立分析后合并返回（每张都完整看一遍）。"""
+    if len(images) == 1:
+        return _ollama_generate_with_fallback(model, prompt, images, options, mode, explicit_model)
+    parts = []
+    for idx, b64 in enumerate(images):
+        name = os.path.basename(paths[idx]) if paths and idx < len(paths) else f"图{idx + 1}"
+        t = _ollama_generate_with_fallback(model, prompt, [b64], options, mode, explicit_model)
+        parts.append(f"图{idx + 1}（{name}）：{t.strip()}")
+    return "\n\n".join(parts)
+
+
 def call_analyze_image(args: dict) -> dict:
     file_path = str(args.get("file_path", "")).strip()
     file_paths = args.get("file_paths")
@@ -861,14 +981,9 @@ def call_analyze_image(args: dict) -> dict:
             log(f"analyze_image 命中缓存：{len(paths)} 张图、model={model}")
             return untrusted_ok(cached)
         log(f"正在用 {model}（mode={mode}）分析 {len(paths)} 张图 ...")
-        try:
-            text = ollama_generate(model, prompt, images, options=options)
-        except urllib.error.HTTPError as e:
-            if e.code == 404 and mode == "quick" and not explicit_model and model != VISION_MODEL:
-                log(f"快速模型 {model} 不存在，自动回退到 {VISION_MODEL}")
-                text = ollama_generate(VISION_MODEL, prompt, images, options=options)
-            else:
-                raise
+        if len(paths) > 1:
+            log("多图模式：逐张分析后合并返回（不再只认第一张）")
+        text = _analyze_images(model, prompt, images, options, mode, explicit_model, paths)
         _cache_put(cache_key, text)
         return untrusted_ok(text)
     except urllib.error.HTTPError as e:
@@ -887,6 +1002,82 @@ def call_analyze_image(args: dict) -> dict:
         return err_result(f"无法连接 Ollama（{OLLAMA_HOST}）：{e.reason}。请确认 Ollama 已启动（ollama serve）。")
     except Exception as e:
         return err_result(f"分析失败：{e}")
+
+
+def call_compare_images(args: dict) -> dict:
+    file_paths = args.get("file_paths")
+    paths = []
+    if isinstance(file_paths, (list, tuple)):
+        paths = [str(p).strip() for p in file_paths if str(p).strip()]
+    if len(paths) < 2:
+        return err_result("compare_images 需要至少 2 张图片：file_paths=[绝对路径1, 绝对路径2, ...]")
+    for p in paths:
+        try:
+            _validate_input_image(p)
+        except (ValueError, FileNotFoundError) as e:
+            return err_result(str(e))
+
+    mode = str(args.get("mode", "detailed")).strip().lower()
+    if mode not in ("quick", "detailed"):
+        return err_result("mode 只能是 quick 或 detailed")
+    explicit_model = bool(str(args.get("model", "")).strip())
+    prompt = str(args.get("prompt", "")).strip()
+    if not prompt:
+        prompt = "请对比这些图片：指出相同点、不同点，以及每张图的独特之处，按图1/图2…编号说明。"
+    model = str(args.get("model", "")).strip() or (VISION_MODEL_QUICK if mode == "quick" else VISION_MODEL)
+
+    options = {}
+    temperature = args.get("temperature")
+    if temperature is not None:
+        try:
+            options["temperature"] = float(temperature)
+        except (TypeError, ValueError):
+            return err_result("temperature 必须是数字")
+    max_tokens = args.get("max_tokens")
+    if max_tokens is not None:
+        try:
+            options["num_predict"] = int(max_tokens)
+        except (TypeError, ValueError):
+            return err_result("max_tokens 必须是整数")
+    num_ctx = args.get("num_ctx")
+    if num_ctx is not None:
+        try:
+            options["num_ctx"] = int(num_ctx)
+        except (TypeError, ValueError):
+            return err_result("num_ctx 必须是整数")
+    options.setdefault("num_ctx", 4096 if mode == "quick" else 8192)
+
+    try:
+        montage_b64 = _montage_images(paths)
+        cache_key = _cache_key(
+            "compare", paths, model, prompt, json.dumps(options, sort_keys=True, ensure_ascii=False)
+        )
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            log("compare_images 命中缓存")
+            note = f"已拼接 {len(paths)} 张图进行对比（图1/图2…编号；拼接会缩小单图，细节请分别 analyze_image）。\n\n"
+            return untrusted_ok(note + cached)
+        log(f"compare_images：已拼接 {len(paths)} 张图，用 {model}（mode={mode}）对比 ...")
+        text = _ollama_generate_with_fallback(model, prompt, [montage_b64], options, mode, explicit_model)
+        _cache_put(cache_key, text)
+        note = f"已拼接 {len(paths)} 张图进行对比（图1/图2…编号；拼接会缩小单图，细节请分别 analyze_image）。\n\n"
+        return untrusted_ok(note + text)
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        if e.code == 404:
+            return err_result(
+                f"Ollama 返回 404：模型 {model!r} 不存在。请先运行：ollama pull {model}"
+                + (f"（快速模式也可运行：ollama pull {VISION_MODEL_QUICK} 提速）" if model != VISION_MODEL_QUICK else "")
+            )
+        return err_result(f"Ollama 请求失败（HTTP {e.code}）：{body or e}")
+    except urllib.error.URLError as e:
+        return err_result(f"无法连接 Ollama（{OLLAMA_HOST}）：{e.reason}。请确认 Ollama 已启动（ollama serve）。")
+    except Exception as e:
+        return err_result(f"对比失败：{e}")
 
 
 def call_image_info(args: dict) -> dict:
@@ -2065,6 +2256,8 @@ def handle_tools_call(msg: dict) -> dict:
     result = {"jsonrpc": "2.0", "id": msg.get("id")}
     if name == "analyze_image":
         result["result"] = call_analyze_image(args)
+    elif name == "compare_images":
+        result["result"] = call_compare_images(args)
     elif name == "image_info":
         result["result"] = call_image_info(args)
     elif name == "list_local_models":

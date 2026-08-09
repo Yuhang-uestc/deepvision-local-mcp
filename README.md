@@ -40,7 +40,7 @@ DeepSeek 等纯文本模型没有视觉能力，但通过 MCP 工具可以获得
 
 一句话：**主模型负责"想"，本地引擎负责"看"，MCP 是桥，skill 是流程**；图片文件与视觉识别在本机完成。
 
-数据流：纯文本主模型（Codex / Claude Code / opencode / DeepSeek 等）→ `server.py`（MCP stdio，11 个工具）→
+数据流：纯文本主模型（Codex / Claude Code / opencode / DeepSeek 等）→ `server.py`（MCP stdio，12 个工具）→
 本地引擎（Ollama 视觉模型 / PaddleOCR / YOLO / OpenCV / Pillow）→ 返回文字与坐标 → 主模型交叉校验并输出最终报告。
 
 ## 文件
@@ -107,7 +107,8 @@ powershell -ExecutionPolicy Bypass -File install-skill.ps1
 
 | 工具 | 用途 |
 |---|---|
-| `analyze_image` | 本地视觉模型分析图片；`mode=quick` 快速精简输出（默认 4B，自动回退）、`mode=detailed` 完整（默认 8B）；`file_paths` 可传多图（qwen3-vl 下仅首图生效，对比请分别分析单张）；`num_ctx`/`temperature` 可调 |
+| `analyze_image` | 本地视觉模型分析图片；`mode=quick` 快速精简输出（默认 4B，自动回退）、`mode=detailed` 完整（默认 8B）；`file_paths` 多张图会逐张分析后合并返回（每张都完整看）；`num_ctx`/`temperature` 可调 |
+| `compare_images` | 用户明确要求对比时用：多张图按图1/图2…编号拼成一张网格图，一次分析异同（拼接会缩小单图，细节请逐张 `analyze_image`） |
 | `image_info` | 读取尺寸/格式/大小，确定坐标系 |
 | `ocr_extract` | 文字提取；`engine=auto` 优先 PaddleOCR，否则 Windows OCR（含位置） |
 | `detect_objects` | YOLO 检测 COCO 80 类，返回类别/置信度/坐标框；可 `save_path` 存标注图 |
@@ -271,7 +272,7 @@ python benchmarks\run_benchmark.py
 - **识别文字随对话上云**：图片文件不出本机，但 OCR / 描述等识别文字会进入主模型对话；若主模型为云端 API（如 DeepSeek），这些文字会发送到其服务器。需要完全隔离时可搭配本地主模型（如 Ollama 中的 qwen3 / deepseek-r1）。
 - **零样本检测的中文描述依赖本地翻译**：常见物体走词典直译，其余靠本地 Ollama 翻译（约几秒）；Ollama 未运行时仅词典词可用，复杂描述建议直接用英文。
 - **qwen3-vl 设置 num_predict（max_tokens）会返回空输出**（实测 Ollama 行为），所以限长靠精简 prompt 而不是参数。
-- **多图对比（file_paths）在 qwen3-vl:8b 下实测无效**：Ollama 只把第一张图传给模型，第二张会被忽略；需要对比时改为分别分析单张图，由主模型综合。
+- **多图策略**：qwen3-vl 一次只认一张图，所以 `analyze_image(file_paths=[...])` 会逐张分析后合并返回（每张都完整看）；用户明确要求"对比/有什么区别"时用 `compare_images`（拼图对比）。拼图会缩小单图，细节场景请分别 `analyze_image`。
 - **OCR 有误读率**：系统 OCR 偶发识别错误，重要文字建议与视觉模型交叉核对；艺术字/手写效果差。
 - **OCR 坐标在 PowerShell 5.1 下为 0**：仅指 Windows 内置 OCR 兜底路径（WinRT 限制）；使用 PaddleOCR 引擎时坐标正常。安装 [PowerShell 7](https://github.com/PowerShell/PowerShell) 后兜底路径的坐标也可用。
 - **8B 模型速度**：每次识图约 20~60 秒，可换 4B 提速。
@@ -358,7 +359,7 @@ ollama pull llava:13b          # 或 llava / gemma3-v 等其他视觉模型
 
 ### 明确不兼容 / 注意
 
-- `file_paths` 多图对比在 qwen3-vl 下实测只认第一张图（与客户端无关，是模型行为）
+- `file_paths` 多图是逐张分析后合并返回；"对比"请用 `compare_images`（拼图对比，单图会缩小）
 - 坐标类任务请走检测/分割工具，别指望任何视觉模型直接报坐标
 
 ## 常见问题
