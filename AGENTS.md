@@ -7,6 +7,8 @@
 
 1. 调用顺序：优先 MCP 工具（`analyze_image` / `ocr_extract` 等）；不可用时用 CLI：
    `python call_tool.py <工具名> '<JSON 参数>'`（以项目根目录为工作目录）。不要为了识图另写一次性脚本。
+   - 若外壳吞掉引号导致"JSON 解析失败"：先用文件编辑器把 JSON 参数写到临时文件，再执行
+     `python call_tool.py <工具名> --args-file <参数文件>`。
 2. 场景选择：
    - 看图说话 / 描述画面：`analyze_image`（顺手用 quick，认真分析用 detailed）
    - 提取文字（截图 / 文档 / 表格）：`ocr_extract`（engine=auto，优先 PaddleOCR）

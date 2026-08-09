@@ -145,6 +145,10 @@ python call_tool.py <工具名> '<JSON 参数>'
 不带参数运行会列出全部 12 个工具。`vision-perceive` skill 已内置该兜底：MCP 工具不可用时自动改用 CLI，
 不会因为客户端没注入工具而跳过识图。
 
+> 提示：在 Codex 桌面端等环境下，命令行里的双引号可能被外壳吞掉，直接传 JSON 参数会报"JSON 解析失败"。
+> 此时改用 `--args-file`：先用文件编辑器把参数写成 JSON 文件，再执行
+> `python call_tool.py <工具名> --args-file <参数文件>`（详见 [docs/识图使用指南.md](docs/识图使用指南.md)）。
+
 ## 定位工具箱（该用哪个）
 
 | 场景 | 工具 | 示例 |

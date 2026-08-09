@@ -139,6 +139,10 @@ Examples:
 Running it without arguments lists all 12 tools. The `vision-perceive` skill includes this fallback: when MCP tools are
 unavailable it automatically switches to the CLI, so vision analysis never gets skipped because the client didn't inject tools.
 
+> Tip: in some environments (e.g. the Codex desktop shell), double quotes in commands may be stripped by the shell,
+> causing "JSON parse failed" when passing JSON directly. In that case use `--args-file`: write the JSON args to a file
+> with the file editor first, then run `python call_tool.py <tool> --args-file <args-file>` (see docs/识图使用指南.md).
+
 ## Which locating tool should I use?
 
 | Scenario | Tool | Example |
