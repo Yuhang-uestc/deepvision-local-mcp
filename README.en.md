@@ -157,6 +157,10 @@ Chinese descriptions are automatically translated to English before detection (c
 When an image analysis request comes in, follow the skill flow instead of a single call: overview → focus → text extraction → precise locating → local zoom → cross-check → final report.
 Multi-round consistent content is trusted; single-round hallucinations get filtered out. Small text/objects are zoomed first, then recognized.
 
+**How to invoke**
+- Explicitly: type `@vision-perceive` before an image request (e.g. `@vision-perceive analyze this image`) to force this flow;
+- Automatically: in a new conversation with this directory as the workspace, [AGENTS.md](AGENTS.md) injects the vision rules (including the CLI fallback) — no prefix needed.
+
 ## Detection dependencies
 
 ```powershell
