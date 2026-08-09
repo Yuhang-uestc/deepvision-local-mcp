@@ -1,8 +1,9 @@
 # Local Vision MCP
 
+Local vision for pure-text LLMs (DeepSeek, etc.): MCP-first, command-line fallback, images never leave your machine.
+
 English | [简体中文](README.md)
 
-An MCP server + multi-round vision skill that gives pure-text LLMs (DeepSeek, etc.) local "sight".
 **Images and vision processing never leave your machine**: read a local image → local Ollama vision model / YOLO / PaddleOCR / OpenCV → return text and coordinates. Raw images are not uploaded directly.
 Recognized text does enter the main model's conversation — if your main model is a cloud API (e.g., DeepSeek), that text is sent to its servers. For full isolation, pair it with a local main model.
 
