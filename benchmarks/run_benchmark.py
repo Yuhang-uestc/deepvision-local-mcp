@@ -312,8 +312,8 @@ def run_crop(case, report_dir):
         final_box = [
             max(0, box[0] - margin),
             max(0, box[1] - margin),
-            min(w - 1, box[2] + margin),
-            min(h - 1, box[3] + margin),
+            min(w, box[2] + margin),
+            min(h, box[3] + margin),
         ]
     call_args = {
         "file_path": resolve(case["file"]),

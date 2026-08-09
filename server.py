@@ -92,6 +92,7 @@ OLLAMA_HOST = _normalize_ollama_host(os.environ.get("OLLAMA_HOST", ""))
 VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "qwen3-vl:8b")
 VISION_MODEL_QUICK = os.environ.get("VISION_MODEL_QUICK", "qwen3-vl:4b")
 MAX_IMAGE_BYTES = int(os.environ.get("LOCAL_VISION_MAX_MB", "20")) * 1024 * 1024
+MAX_CROP_PIXELS = 50_000_000  # crop 放大后的输出像素上限，防止 scale 过大把内存撑爆
 LOCAL_VISION_CACHE = os.environ.get("LOCAL_VISION_CACHE", "1").strip().lower() in ("1", "true", "yes")
 LOCAL_VISION_CACHE_TTL = int(os.environ.get("LOCAL_VISION_CACHE_TTL", "1800"))
 LOCAL_VISION_CACHE_MAX = int(os.environ.get("LOCAL_VISION_CACHE_MAX", "64"))
@@ -650,30 +651,39 @@ def _load_image_b64(file_path: str, max_dimension: int):
         raise ValueError(
             f"图片过大（{size / 1024 / 1024:.1f}MB > {MAX_IMAGE_BYTES / 1024 / 1024:.0f}MB），请换一张较小的图"
         )
-    if max_dimension <= 0:
+    try:
+        Image = _require_pillow()[0]
+    except ImportError:
+        if max_dimension > 0:
+            raise ValueError("LOCAL_VISION_MAX_DIMENSION 需要 Pillow，请先安装：python -m pip install Pillow")
         with open(file_path, "rb") as f:
             return base64.b64encode(f.read()).decode("ascii"), False
-    try:
-        from PIL import Image
 
-        import io
-    except ImportError:
-        raise ValueError("LOCAL_VISION_MAX_DIMENSION 需要 Pillow，请先安装：python -m pip install Pillow")
     with Image.open(file_path) as im:
+        orientation = im.getexif().get(0x0112, 1)
         w, h = im.size
-        if max(w, h) <= max_dimension:
-            with open(file_path, "rb") as f:
-                return base64.b64encode(f.read()).decode("ascii"), False
+    if orientation == 1 and (max_dimension <= 0 or max(w, h) <= max_dimension):
+        # 无方向问题且无需缩放：原样发送，避免重复解码与质量损失
+        with open(file_path, "rb") as f:
+            return base64.b64encode(f.read()).decode("ascii"), False
+
+    import io
+
+    im = _open_image_transposed(file_path)
+    w, h = im.size
+    resized = False
+    if max_dimension > 0 and max(w, h) > max_dimension:
         scale = max_dimension / float(max(w, h))
         nw = max(1, int(round(w * scale)))
         nh = max(1, int(round(h * scale)))
-        if im.mode != "RGB":
-            im = im.convert("RGB")
         resample = getattr(Image, "Resampling", Image).LANCZOS
         im = im.resize((nw, nh), resample)
-        buf = io.BytesIO()
-        im.save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode("ascii"), True
+        resized = True
+    if im.mode != "RGB":
+        im = im.convert("RGB")
+    buf = io.BytesIO()
+    im.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii"), resized
 
 
 def _require_pillow():
@@ -683,6 +693,45 @@ def _require_pillow():
         return Image, ImageDraw, ImageFont
     except ImportError:
         raise ImportError("缺少 Pillow，请先安装：python -m pip install Pillow")
+
+
+def _open_image_transposed(file_path):
+    """打开图片并应用 EXIF 方向（手机照片常见），保持原始颜色模式。"""
+    Image, _, _ = _require_pillow()
+    from PIL import ImageOps
+
+    with Image.open(file_path) as im:
+        im = ImageOps.exif_transpose(im)
+        im.load()
+    return im
+
+
+def _open_rgb_image(file_path):
+    """打开图片：EXIF 转正 + 转 RGB；透明图以白色打底，避免黑底。"""
+    Image, _, _ = _require_pillow()
+    im = _open_image_transposed(file_path)
+    if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+        im = im.convert("RGBA")
+        bg = Image.new("RGBA", im.size, (255, 255, 255, 255))
+        bg.alpha_composite(im)
+        im = bg
+    return im.convert("RGB")
+
+
+def _cv_imread_transposed(file_path):
+    """读取图片为 BGR ndarray（EXIF 转正；透明图白底）。无 Pillow 时退化为 cv2.imread。"""
+    import cv2
+
+    try:
+        import numpy as np
+    except ImportError:
+        return cv2.imread(file_path)
+    try:
+        im = _open_rgb_image(file_path)
+        arr = np.array(im)
+    except ImportError:
+        return cv2.imread(file_path)
+    return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
 
 
 _FONT_CACHE = {}
@@ -724,8 +773,7 @@ def _montage_images(paths, max_cell=720, label_size=26, pad=12):
     loaded = []
     for p in paths:
         _validate_input_image(p)
-        with Image.open(p) as im:
-            im = im.convert("RGB")
+        im = _open_rgb_image(p)
         w, h = im.size
         scale = min(1.0, max_cell / float(max(w, h)))
         nw = max(1, int(round(w * scale)))
@@ -784,7 +832,7 @@ def _parse_color(value, default=(255, 0, 0)):
         try:
             return (int(value[0]), int(value[1]), int(value[2]))
         except (TypeError, ValueError, IndexError):
-            return default
+            raise ValueError(f"无法识别的颜色：{value}，请用英文名或 #RRGGBB")
     s = str(value).strip()
     if s.lower() in _NAMED_COLORS:
         return _NAMED_COLORS[s.lower()]
@@ -794,7 +842,9 @@ def _parse_color(value, default=(255, 0, 0)):
             return tuple(int(s[i : i + 2], 16) for i in (0, 2, 4))
         except ValueError:
             pass
-    return default
+    raise ValueError(
+        f"无法识别的颜色：{s or value}，请用英文名（red/green/blue/yellow/cyan/magenta/orange/white/black）或 #RRGGBB"
+    )
 
 
 def _parse_rect(args: dict, w: int, h: int, normalized_default: bool = False):
@@ -810,11 +860,13 @@ def _parse_rect(args: dict, w: int, h: int, normalized_default: bool = False):
         x1, x2 = x1 * w, x2 * w
         y1, y2 = y1 * h, y2 * h
     box = [int(round(v)) for v in (x1, y1, x2, y2)]
+    # 注意：右/下边界允许取到 w/h（裁切是"开区间"），否则永远裁不到最后一行/列；
+    # 画框时 Pillow 会自动裁剪越界描边，不影响。
     box = [
         max(0, min(box[0], w - 1)),
         max(0, min(box[1], h - 1)),
-        max(0, min(box[2], w - 1)),
-        max(0, min(box[3], h - 1)),
+        max(0, min(box[2], w)),
+        max(0, min(box[3], h)),
     ]
     if box[2] <= box[0] or box[3] <= box[1]:
         raise ValueError("区域无效：x2 必须大于 x1 且 y2 必须大于 y1")
@@ -1433,7 +1485,7 @@ def call_crop_image(args: dict) -> dict:
     except ImportError as e:
         return err_result(str(e))
     try:
-        img = Image.open(file_path)
+        img = _open_image_transposed(file_path)
         w, h = img.size
         try:
             box = _parse_rect(args, w, h)
@@ -1444,8 +1496,8 @@ def call_crop_image(args: dict) -> dict:
             box = [
                 max(0, box[0] - margin),
                 max(0, box[1] - margin),
-                min(w - 1, box[2] + margin),
-                min(h - 1, box[3] + margin),
+                min(w, box[2] + margin),
+                min(h, box[3] + margin),
             ]
         try:
             scale = float(args.get("scale", 1) or 1)
@@ -1457,6 +1509,11 @@ def call_crop_image(args: dict) -> dict:
         if abs(scale - 1.0) > 1e-6:
             nw = max(1, int(round((box[2] - box[0]) * scale)))
             nh = max(1, int(round((box[3] - box[1]) * scale)))
+            if nw * nh > MAX_CROP_PIXELS:
+                return err_result(
+                    f"放大后输出过大（{nw}x{nh}，约 {nw * nh / 1e6:.0f} 百万像素），"
+                    f"超过上限 {MAX_CROP_PIXELS / 1e6:.0f}MP，请降低 scale"
+                )
             resample = getattr(Image, "Resampling", Image).LANCZOS
             region = region.resize((nw, nh), resample)
         output_path = str(args.get("output_path", "")).strip()
@@ -1484,7 +1541,7 @@ def call_draw_box(args: dict) -> dict:
         return err_result(str(e))
 
     try:
-        img = Image.open(image_path).convert("RGB")
+        img = _open_rgb_image(image_path)
         w, h = img.size
         draw = ImageDraw.Draw(img)
         boxes = args.get("boxes")
@@ -1505,7 +1562,10 @@ def call_draw_box(args: dict) -> dict:
                 box = _parse_rect(item, w, h)
             except ValueError as e:
                 return err_result(str(e))
-            color = _parse_color(item.get("color"))
+            try:
+                color = _parse_color(item.get("color"))
+            except ValueError as e:
+                return err_result(str(e))
             label = str(item.get("label", "")).strip()
             conf = item.get("confidence")
             if label and conf is not None:
@@ -1534,7 +1594,10 @@ def call_draw_box(args: dict) -> dict:
 
 def _cv_locate_color(args: dict) -> dict:
     file_path = str(args.get("file_path", "")).strip()
-    color = _parse_color(args.get("color"))
+    try:
+        color = _parse_color(args.get("color"))
+    except ValueError as e:
+        return err_result(str(e))
     try:
         tolerance = float(args.get("tolerance", 40) or 40)
     except (TypeError, ValueError):
@@ -1553,7 +1616,7 @@ def _cv_locate_color(args: dict) -> dict:
         return err_result("颜色定位需要 numpy + opencv-python（随 ultralytics 一起安装）：python -m pip install opencv-python")
 
     try:
-        img = cv2.imread(file_path)
+        img = _cv_imread_transposed(file_path)
         if img is None:
             return err_result(f"无法读取图片：{file_path}")
         h, w = img.shape[:2]
@@ -1615,8 +1678,8 @@ def _cv_locate_template(args: dict) -> dict:
         return err_result("模板匹配需要 numpy + opencv-python（随 ultralytics 一起安装）：python -m pip install opencv-python")
 
     try:
-        img = cv2.imread(file_path)
-        tpl0 = cv2.imread(template_path)
+        img = _cv_imread_transposed(file_path)
+        tpl0 = _cv_imread_transposed(template_path)
         if img is None:
             return err_result(f"无法读取图片：{file_path}")
         if tpl0 is None:

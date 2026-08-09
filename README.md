@@ -217,9 +217,10 @@ python -c "from ultralytics import YOLO; YOLO('yoloe-v8s-seg.pt')"
 
 ```powershell
 python tests\test_server.py
+python tests\test_edge_cases.py
 ```
 
-离线测试用 mock Ollama 验证协议与全部工具，共 28 项（analyze / 缓存命中 / 瞬时错误重试 / 相对路径拒绝 / 伪格式拒绝 / 可选大图缩放 / crop / draw / cv_locate / 错误路径 / 输出目录限制 / 零样本翻译桥等）。
+离线测试用 mock Ollama 验证协议与全部工具，共 52 项：`test_server.py` 30 项（analyze / 缓存命中 / 瞬时错误重试 / 多图逐张 / 拼图对比 / 相对路径拒绝 / 伪格式拒绝 / 可选大图缩放 / crop / draw / cv_locate / 错误路径 / 输出目录限制 / 零样本翻译桥等）+ `test_edge_cases.py` 22 项（EXIF 方向 / 透明图白底 / 非法颜色报错 / scale 内存上限 / 反向坐标 / 格式兼容 / 定位边界）。
 
 另有**基准测试**（量化精度，合成图 + 标准答案，可复现）：
 
