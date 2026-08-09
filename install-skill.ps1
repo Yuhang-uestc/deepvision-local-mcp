@@ -1,4 +1,4 @@
-﻿# 安装/更新 vision-perceive skill 到 ~/.codex/skills
+﻿# 安装/更新 vision-perceive skill 到 ~/.codex/skills，并安装全局 AGENTS.md（本机识图工具入口）。
 # 用法：powershell -ExecutionPolicy Bypass -File install-skill.ps1
 # 可选：-SkillDest <路径>（自定义/测试目标目录）
 param(
@@ -33,6 +33,33 @@ if (Test-Path -LiteralPath $skillFile) {
     $content = $content.Replace("__CALL_TOOL_PATH__", $callToolToml)
     [System.IO.File]::WriteAllText($skillFile, $content, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "已注入 CLI 路径：$callToolToml"
+}
+
+# 安装/更新全局 AGENTS.md（本机识图工具入口，仅图片任务相关，不影响其它任务）。
+# 用标记块替换，保留用户已有的其它内容；可重复执行。
+$agentsDest = Join-Path $env:USERPROFILE ".codex\AGENTS.md"
+$agentsTemplate = Join-Path $PSScriptRoot "AGENTS.global.template.md"
+if (Test-Path -LiteralPath $agentsTemplate) {
+    $block = [System.IO.File]::ReadAllText($agentsTemplate, [System.Text.Encoding]::UTF8)
+    $block = $block.Replace("__CALL_TOOL_PATH__", $callToolToml)
+    $existing = ""
+    if (Test-Path -LiteralPath $agentsDest) {
+        $existing = [System.IO.File]::ReadAllText($agentsDest, [System.Text.Encoding]::UTF8)
+    }
+    $markerStart = "<!-- deepvision-local-mcp:start -->"
+    $markerEnd = "<!-- deepvision-local-mcp:end -->"
+    $startIdx = $existing.IndexOf($markerStart)
+    $endIdx = $existing.IndexOf($markerEnd)
+    if ($startIdx -ge 0 -and $endIdx -gt $startIdx) {
+        $existing = $existing.Substring(0, $startIdx) + $block.Trim() + $existing.Substring($endIdx + $markerEnd.Length)
+    } else {
+        if ($existing.Trim() -ne "") {
+            $existing = $existing.TrimEnd() + "`r`n`r`n"
+        }
+        $existing = $existing + $block
+    }
+    [System.IO.File]::WriteAllText($agentsDest, $existing, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "已安装全局 AGENTS.md → $agentsDest"
 }
 
 Write-Host "完成。重启 Codex 后生效。"
