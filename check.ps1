@@ -29,8 +29,12 @@ python -c "import PIL; print('Pillow', PIL.__version__)"
 Write-Host "`n===== 5) MCP 注册 (local_vision) ====="
 $cfg = Join-Path $env:USERPROFILE ".codex\config.toml"
 if (Test-Path -LiteralPath $cfg) {
-    $content = Get-Content -LiteralPath $cfg -Raw
-    if ($content -match 'local_vision') { Write-Host "OK: local_vision 已注册" } else { Write-Host "FAIL: 未注册，运行 register-mcp.ps1" }
+    python "$PSScriptRoot\check_mcp.py" --config $cfg
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "OK: local_vision 可连接，工具已就绪"
+    } else {
+        Write-Host "FAIL: 见上方探针输出。若提示 command 是裸 python，请重跑 register-mcp.ps1 升级为绝对路径，然后完全退出并重启 Codex（新开任务不算）。"
+    }
 } else {
     Write-Host "FAIL: 找不到 Codex 配置 $cfg"
 }

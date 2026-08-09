@@ -307,8 +307,8 @@ server.py 不依赖 DeepSeek，只认 MCP 协议。只要你的客户端支持 M
 }
 ```
 
-> 提示：如果用了 conda/venv，建议把 `command` 写成该环境的 Python 绝对路径（如 `E:/miniconda3/python.exe`），
-> 避免客户端进程没有继承虚拟环境 PATH 时找到错误解释器。
+> 提示：`register-mcp.ps1` 已自动写入当前环境的 Python 绝对路径；如果手动配置，建议把 `command` 写成该环境的 Python 绝对路径
+> （如 `E:/miniconda3/python.exe`），避免客户端进程没有继承虚拟环境 PATH 时找到错误解释器（如微软商店占位程序）。
 
 | 客户端 | 注册方式 | 说明 |
 |---|---|---|

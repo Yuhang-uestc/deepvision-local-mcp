@@ -293,7 +293,7 @@ Register server.py as a standard MCP stdio server:
 }
 ```
 
-> Tip: if you use conda/venv, set `command` to that environment's Python absolute path (e.g. `E:/miniconda3/python.exe`) so the client doesn't pick the wrong interpreter when it lacks the venv PATH.
+> Tip: `register-mcp.ps1` already writes the current environment's Python absolute path. If configuring manually, set `command` to that environment's Python absolute path (e.g. `E:/miniconda3/python.exe`) so the client doesn't pick the wrong interpreter (e.g. the Microsoft Store stub) when it lacks the venv PATH.
 
 | Client | Registration | Notes |
 |---|---|---|
