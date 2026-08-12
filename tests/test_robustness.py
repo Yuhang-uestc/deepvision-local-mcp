@@ -327,5 +327,44 @@ class TestBenchmarkUtils(unittest.TestCase):
         self.assertEqual(m["recall"], 1.0)
 
 
+class TestPaddleCacheRedirect(unittest.TestCase):
+    """PaddleX 缓存自动重定向：默认缓存不可写时改到可写目录，尊重用户显式设置。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._env_backup = os.environ.get("PADDLE_PDX_CACHE_HOME")
+        os.environ.pop("PADDLE_PDX_CACHE_HOME", None)
+
+    def tearDown(self):
+        if self._env_backup is None:
+            os.environ.pop("PADDLE_PDX_CACHE_HOME", None)
+        else:
+            os.environ["PADDLE_PDX_CACHE_HOME"] = self._env_backup
+
+    def test_writable_default_no_change(self):
+        ok_dir = os.path.join(self.tmp.name, "ok")
+        os.makedirs(ok_dir)
+        server._ensure_paddle_cache_writable(default_cache=ok_dir)
+        self.assertNotIn("PADDLE_PDX_CACHE_HOME", os.environ)
+
+    def test_unwritable_default_redirects(self):
+        # 用一个"文件"冒充目录，写入必然失败 -> 触发重定向
+        blocked = os.path.join(self.tmp.name, "blocked")
+        open(blocked, "w").write("x")
+        server._ensure_paddle_cache_writable(default_cache=blocked)
+        redirected = os.environ.get("PADDLE_PDX_CACHE_HOME")
+        self.assertTrue(redirected, "应自动重定向")
+        self.assertTrue(os.path.isdir(redirected))
+        probe = os.path.join(redirected, ".probe")
+        open(probe, "w").write("x")
+        os.unlink(probe)
+
+    def test_explicit_env_respected(self):
+        os.environ["PADDLE_PDX_CACHE_HOME"] = "D:/my_cache"
+        server._ensure_paddle_cache_writable(default_cache=os.path.join(self.tmp.name, "nope"))
+        self.assertEqual(os.environ["PADDLE_PDX_CACHE_HOME"], "D:/my_cache")
+
+
 if __name__ == "__main__":
     unittest.main()

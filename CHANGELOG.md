@@ -17,6 +17,7 @@
 - 透明 PNG 在拼图/画框中变黑底（现以白色打底）
 - `OLLAMA_HOST` 带路径（如代理地址 `https://host/api`）时端口会被追加到路径末尾，现只在 host:port 部分补端口
 - PaddleOCR 结果解析器遇到畸形条目会整体抛异常，现逐条防御、跳过坏行
+- PaddleX 默认缓存不可写时（沙箱 / 多账号 / 服务场景）自动重定向到项目 `outputs/paddlex_cache`，不再无条件回退 Windows OCR
 
 ### 文档
 - README / skill / 架构说明 / 开发记录同步多图策略与边界行为；新增 tests/test_edge_cases.py（22 项）与 tests/test_robustness.py（28 项）

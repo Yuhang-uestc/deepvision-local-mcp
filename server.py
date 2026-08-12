@@ -1262,6 +1262,7 @@ def _get_paddle_ocr(lang):
         # 多个工具并发调用时同时初始化会互相踩 ~/.paddlex 的锁与文件（Windows 上表现为 PermissionError）。
         with _PADDLE_OCR_INIT_LOCK:
             if key not in _PADDLE_OCR_CACHE:
+                _ensure_paddle_cache_writable()
                 from paddleocr import PaddleOCR
 
                 paddle_lang = "ch" if lang.lower().startswith("zh") else "en"
@@ -1294,6 +1295,38 @@ def _get_paddle_ocr(lang):
                             enable_mkldnn=False,
                         )
     return _PADDLE_OCR_CACHE[key]
+
+
+def _ensure_paddle_cache_writable(default_cache=None):
+    """探测默认 PaddleX 缓存是否可写；不可写时自动重定向 PADDLE_PDX_CACHE_HOME。
+
+    Windows 上 os.access 受 ACL 继承影响会误报，必须实际写入探测。
+    典型场景：沙箱/服务账号与下载模型的账号不同，写不进 ~/.paddlex。
+    用户已显式设置 PADDLE_PDX_CACHE_HOME 时尊重其选择，不做重定向。
+    """
+    if os.environ.get("PADDLE_PDX_CACHE_HOME"):
+        return
+    if default_cache is None:
+        default_cache = os.path.join(os.path.expanduser("~"), ".paddlex")
+    try:
+        probe = os.path.join(default_cache, f".write_probe_{os.getpid()}")
+        with open(probe, "w") as f:
+            f.write("ok")
+        os.unlink(probe)
+        return  # 默认缓存可写，无需处理
+    except OSError:
+        pass
+    fallback = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs", "paddlex_cache")
+    try:
+        os.makedirs(fallback, exist_ok=True)
+        probe = os.path.join(fallback, f".write_probe_{os.getpid()}")
+        with open(probe, "w") as f:
+            f.write("ok")
+        os.unlink(probe)
+    except OSError:
+        return  # 兜底也不可写，让 PaddleOCR 自行报错并回退
+    os.environ["PADDLE_PDX_CACHE_HOME"] = fallback
+    log(f"PaddleX 默认缓存不可写（{default_cache}），已自动重定向到 {fallback}（PADDLE_PDX_CACHE_HOME）")
 
 
 def _parse_paddle_v2(result):
