@@ -7,6 +7,8 @@
 - **`compare_images` 对比工具**：用户明确要求对比时，把多张图按图1/图2…编号拼成网格图，一次分析异同（工具数 11 → 12）
 - **CLI 兜底**：新增 `call_tool.py`，命令行直接调用 12 个工具（`python call_tool.py <工具名> '<JSON 参数>'`）；
   客户端不注入 MCP 工具时同样可用；`vision-perceive` skill 安装时自动注入路径，MCP 不可用时自动改用 CLI
+- **PaddleOCR 模型安装即预下载**：`install-extra.ps1` 装完依赖后把模型一次性下到项目 `outputs\paddlex_cache`
+  并设置 `PADDLE_PDX_CACHE_HOME`，终端与 AI 会话共用缓存，避免"用不了→重新下载"循环
 
 ### 修复
 - 多图输入静默丢弃第二张的问题（qwen3-vl 一次只认一张图，现改为逐张分析）

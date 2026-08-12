@@ -39,4 +39,24 @@ if ($clipInstalled) {
     Write-Host "  python -m pip install git+https://ghproxy.net/https://github.com/ultralytics/CLIP.git"
 }
 
-Write-Host "`n完成。装好后重启 Codex 生效。PaddleOCR 首次调用会联网下载识别模型（约 100MB+）。"
+# ===== 预下载 PaddleOCR 模型到项目缓存（终端与 AI 会话共用，避免重复下载）=====
+Write-Host "`n===== 预下载 PaddleOCR 模型（一次性，约 100MB+）====="
+$cacheDir = Join-Path $PSScriptRoot "outputs\paddlex_cache"
+New-Item -ItemType Directory -Force $cacheDir | Out-Null
+$env:PADDLE_PDX_CACHE_HOME = $cacheDir
+Push-Location $PSScriptRoot
+python -c "import sys; sys.path.insert(0, '.'); import server; server._get_paddle_ocr('zh'); print('OK: PaddleOCR 模型已就绪')"
+$dlOk = ($LASTEXITCODE -eq 0)
+Pop-Location
+
+if ($dlOk) {
+    setx PADDLE_PDX_CACHE_HOME $cacheDir | Out-Null
+    Write-Host "模型缓存：$cacheDir"
+    Write-Host "已设置用户环境变量 PADDLE_PDX_CACHE_HOME（终端与 AI 会话共用，重启终端/Codex 后生效）。"
+    Write-Host "注意：缓存跟随项目目录；项目移动/重命名后需重新运行本脚本或手动更新该环境变量。"
+} else {
+    Write-Host "WARN: 模型预下载未完成（可能网络受限）。未设置环境变量——终端首次调用会在默认位置下载；"
+    Write-Host "想让终端与 AI 会话共用同一份缓存，请网络正常后重新运行本脚本。"
+}
+
+Write-Host "`n完成。装好后重启 Codex 生效。"
